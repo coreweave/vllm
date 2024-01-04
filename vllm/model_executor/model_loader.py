@@ -9,12 +9,8 @@ from transformers import PretrainedConfig
 from vllm.config import ModelConfig
 from vllm.model_executor.models import ModelRegistry
 from vllm.model_executor.weight_utils import (get_quant_config,
-                                              initialize_dummy_weights)
-
-# FIXME(ssteel): Remove this once all models support tensorizer.
-_MODEL_CLASSES_SUPPORT_TENSORIZER = [
-    "MistralForCausalLM"
-]
+                                              initialize_dummy_weights,
+                                              load_tensorized_weights)
 
 @contextlib.contextmanager
 def _set_default_torch_dtype(dtype: torch.dtype):
@@ -38,9 +34,6 @@ def _get_model_architecture(config: PretrainedConfig) -> Type[nn.Module]:
 
 def get_model(model_config: ModelConfig) -> nn.Module:
     model_class = _get_model_architecture(model_config.hf_config)
-
-    if model_config.load_format == "tensorizer" and model_config.model not in _MODEL_CLASSES_SUPPORT_TENSORIZER:
-        raise ValueError(f"Tensorizer is not supported for {model_class}.")
 
     # Get the (maybe quantized) linear method.
     linear_method = None
@@ -74,6 +67,8 @@ def get_model(model_config: ModelConfig) -> nn.Module:
             # NOTE(woosuk): For accurate performance evaluation, we assign
             # random values to the weights.
             initialize_dummy_weights(model)
+        if model_config.load_format == "tensorizer":
+            load_tensorized_weights(model_config.tensorizer_path)
         else:
             # Load the weights from the cached or downloaded files.
             model.load_weights(model_config.model, model_config.download_dir,
