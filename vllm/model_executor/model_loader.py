@@ -4,7 +4,8 @@ from typing import Type
 
 import torch
 import torch.nn as nn
-from transformers import PretrainedConfig
+from transformers import PretrainedConfig, AutoModelForCausalLM
+from tensorizer.utils import no_init_or_tensor
 
 from vllm.config import ModelConfig
 from vllm.model_executor.models import ModelRegistry
@@ -68,10 +69,12 @@ def get_model(model_config: ModelConfig) -> nn.Module:
             # random values to the weights.
             initialize_dummy_weights(model)
         if model_config.load_format == "tensorizer":
-            load_tensorized_weights(model_config.tensorizer_path)
+            with no_init_or_tensor():
+                model = AutoModelForCausalLM.from_config(model_config.hf_config)
+            load_tensorized_weights(model, model_config.tensorizer_path)
         else:
             # Load the weights from the cached or downloaded files.
             model.load_weights(model_config.model, model_config.download_dir,
                                model_config.load_format, model_config.revision,
-                               model_config.tensorizer_path)
+                               )
     return model.eval()

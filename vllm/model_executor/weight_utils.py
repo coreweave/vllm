@@ -291,13 +291,15 @@ def initialize_dummy_weights(
             param.data.uniform_(low, high)
 
 
-def load_tensorized_weights(tensorizer_path: str):
+def load_tensorized_weights(model: torch.nn.Module,
+                            tensorizer_path: str):
     before_mem = get_mem_usage()
     # Lazy load the tensors from S3 into the model.
     start = time.time()
     stream = stream_io.open_stream(tensorizer_path, "rb")
     deserializer = TensorDeserializer(stream, plaid_mode=True)
-    deserializer.load_into_module(self)
+    print('Deserializing..')
+    deserializer.load_into_module(model)
     end = time.time()
 
     # Brag about how fast we are.

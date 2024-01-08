@@ -8,6 +8,7 @@ from vllm.logger import init_logger
 from vllm.transformers_utils.config import get_config
 from vllm.utils import get_cpu_memory, is_hip
 
+
 logger = init_logger(__name__)
 
 _GB = 1 << 30

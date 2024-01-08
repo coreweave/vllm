@@ -117,3 +117,6 @@ async def test_get_gen_prompt(model, template, add_generation_prompt,
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
+
+
+
