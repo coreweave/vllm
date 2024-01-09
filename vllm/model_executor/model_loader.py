@@ -13,6 +13,7 @@ from vllm.model_executor.weight_utils import (get_quant_config,
                                               initialize_dummy_weights,
                                               load_tensorized_weights)
 
+
 @contextlib.contextmanager
 def _set_default_torch_dtype(dtype: torch.dtype):
     """Sets the default torch dtype to the given dtype."""
@@ -62,19 +63,20 @@ def get_model(model_config: ModelConfig) -> nn.Module:
     with _set_default_torch_dtype(model_config.dtype):
         # Create a model instance.
         # The weights will be initialized as empty tensors.
-        with torch.device("cuda"):
-            model = model_class(model_config.hf_config, linear_method)
-        if model_config.load_format == "dummy":
-            # NOTE(woosuk): For accurate performance evaluation, we assign
-            # random values to the weights.
-            initialize_dummy_weights(model)
+        model_args = [model_config.hf_config]
         if model_config.load_format == "tensorizer":
-            with no_init_or_tensor():
-                model = AutoModelForCausalLM.from_config(model_config.hf_config)
+            model = no_init_or_tensor(lambda: model_class(*model_args))
             load_tensorized_weights(model, model_config.tensorizer_path)
         else:
-            # Load the weights from the cached or downloaded files.
-            model.load_weights(model_config.model, model_config.download_dir,
-                               model_config.load_format, model_config.revision,
-                               )
+            with torch.device("cuda"):
+                model = model_class(model_config.hf_config, linear_method)
+            if model_config.load_format == "dummy":
+                # NOTE(woosuk): For accurate performance evaluation, we assign
+                # random values to the weights.
+                initialize_dummy_weights(model)
+            else:
+                # Load the weights from the cached or downloaded files.
+                model.load_weights(model_config.model, model_config.download_dir,
+                                   model_config.load_format, model_config.revision,
+                                   )
     return model.eval()
