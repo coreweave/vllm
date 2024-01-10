@@ -16,6 +16,7 @@ from tqdm.auto import tqdm
 from tensorizer import TensorDeserializer, stream_io
 from tensorizer.utils import convert_bytes, get_mem_usage
 
+from vllm.config import ModelConfig
 from vllm.logger import init_logger
 from vllm.model_executor.layers.quantization import (get_quantization_config,
                                                      QuantizationConfig)
@@ -292,14 +293,15 @@ def initialize_dummy_weights(
 
 
 def load_tensorized_weights(model: torch.nn.Module,
-                            tensorizer_path: str):
+                            model_config: ModelConfig):
     before_mem = get_mem_usage()
     # Lazy load the tensors from S3 into the model.
     start = time.time()
-    stream = stream_io.open_stream(tensorizer_path, "rb")
+    stream = stream_io.open_stream(model_config.tensorizer_path, "rb")
     deserializer = TensorDeserializer(stream, plaid_mode=True)
     print('Deserializing..')
     deserializer.load_into_module(model)
+    model = model.to(dtype=model_config.dtype)
     end = time.time()
 
     # Brag about how fast we are.
