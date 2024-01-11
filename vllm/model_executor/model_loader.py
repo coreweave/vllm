@@ -64,9 +64,7 @@ def get_model(model_config: ModelConfig) -> nn.Module:
         # Create a model instance.
         # The weights will be initialized as empty tensors.
         model_args = model_config.hf_config
-        print(model_args.torch_dtype)
         model_args.torch_dtype = model_config.dtype
-        print(model_args.torch_dtype)
         if model_config.load_format == "tensorizer":
             model = no_init_or_tensor(lambda: model_class(*[model_args]))
             load_tensorized_weights(model, model_config)
