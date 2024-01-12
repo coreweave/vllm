@@ -1,16 +1,87 @@
 """Utilities for selecting and loading models."""
 import contextlib
+import time
 from typing import Type
+import sys
 
 import torch
 import torch.nn as nn
 from transformers import PretrainedConfig
 
+from vllm.logger import init_logger
 from vllm.config import ModelConfig
 from vllm.model_executor.models import ModelRegistry
 from vllm.model_executor.weight_utils import (get_quant_config,
                                               initialize_dummy_weights)
-from vllm.model_executor.tensorizer import TensorizerAgent
+
+from torch import nn
+
+from tensorizer import TensorDeserializer, TensorSerializer, stream_io
+from tensorizer.utils import convert_bytes, get_mem_usage, no_init_or_tensor
+
+logger = init_logger(__name__)
+
+class TensorizerAgent:
+    def __init__(self, model_cls: Type[nn.Module], model_config: ModelConfig):
+        self.model_cls = model_cls
+        self.model_config = model_config
+        #self.model_config.hf_config.torch_dtype = self.model_config.dtype
+
+        self.serialize_model = self._verify_path_reachable()
+
+    def _verify_path_reachable(self):
+        try:
+            stream_io.open_stream(self.model_config.tensorizer_path, "rb")
+            return False
+        except OSError as err:
+            if "Not Found" in str(err) and self.model_config.serialize == True:
+                logger.info(f"Tensors not found and serialize set to True. Will serialize tensors to {self.model_config.tensorizer_path}")
+                return True
+            else:
+                raise OSError(err)
+                
+    def serialize(self):
+        with torch.device("cuda"):
+            model = self.model_cls(self.model_config.hf_config)
+        _make_model_contiguous(model)
+        stream = stream_io.open_stream(self.model_config.tensorizer_path, "wb")
+        serializer = TensorSerializer(stream)
+        logger.info(f"Serializing model tensors {self.model_config.model} to {self.model_config.tensorizer_path}.")
+        serializer.write_module(model)
+        serializer.close()
+        logger.info(f"Serialization complete. Closing session.")
+        sys.exit(0)
+
+    def deserialize(self):
+        #TODO: add TensorDeserializer args
+        before_mem = get_mem_usage()
+        # Lazy load the tensors from S3 into the model.
+        start = time.time()
+        stream = stream_io.open_stream(self.model_config.tensorizer_path, "rb")
+        model = _prepare_model_for_deserialization(self.model_cls, self.model_config)
+        deserializer = TensorDeserializer(stream, plaid_mode=True)
+        deserializer.load_into_module(model)
+        model = model.to(dtype=self.model_config.dtype)
+        end = time.time()
+
+        # Brag about how fast we are.
+        total_bytes_str = convert_bytes(deserializer.total_tensor_bytes)
+        duration = end - start
+        per_second = convert_bytes(deserializer.total_tensor_bytes / duration)
+        after_mem = get_mem_usage()
+        deserializer.close()
+        logger.info(f"Deserialized {total_bytes_str} in {end - start:0.2f}s, {per_second}/s")
+        logger.info(f"Memory usage before: {before_mem}")
+        logger.info(f"Memory usage after: {after_mem}")
+
+        return model
+
+    def run(self):
+        if self.serialize_model:
+            self.serialize()
+        else:
+            return self.deserialize()
+        
 
 
 @contextlib.contextmanager
@@ -20,6 +91,18 @@ def _set_default_torch_dtype(dtype: torch.dtype):
     torch.set_default_dtype(dtype)
     yield
     torch.set_default_dtype(old_dtype)
+
+def _prepare_model_for_deserialization(model_cls: Type[nn.Module], model_config: ModelConfig):
+    model_args = model_config.hf_config
+    model_args.torch_dtype = model_config.dtype
+    model = no_init_or_tensor(lambda: model_cls(*[model_args]))
+    return model
+
+
+def _make_model_contiguous(model: nn.Module):
+    # Ensure tensors are saved in memory contiguously
+    for param in model.parameters():
+        param.data = param.data.contiguous()
 
 
 def _get_model_architecture(config: PretrainedConfig) -> Type[nn.Module]:
@@ -62,11 +145,9 @@ def get_model(model_config: ModelConfig) -> nn.Module:
     with _set_default_torch_dtype(model_config.dtype):
         # Create a model instance.
         # The weights will be initialized as empty tensors.
-        model_args = model_config.hf_config
-        model_args.torch_dtype = model_config.dtype
         if model_config.load_format == "tensorizer":
-            tensorizer = TensorizerAgent(model_config)
-            return tensorizer.deserialize()
+            tensorizer = TensorizerAgent(model_class, model_config)
+            return tensorizer.run()
         else:
             with torch.device("cuda"):
                 model = model_class(model_config.hf_config, linear_method)

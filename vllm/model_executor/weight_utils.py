@@ -291,25 +291,3 @@ def initialize_dummy_weights(
         if torch.is_floating_point(param):
             param.data.uniform_(low, high)
 
-
-def load_tensorized_weights(model: torch.nn.Module,
-                            model_config: ModelConfig):
-    before_mem = get_mem_usage()
-    # Lazy load the tensors from S3 into the model.
-    start = time.time()
-    stream = stream_io.open_stream(model_config.tensorizer_path, "rb")
-    deserializer = TensorDeserializer(stream, plaid_mode=True)
-    print('Deserializing..')
-    deserializer.load_into_module(model)
-    model = model.to(dtype=model_config.dtype)
-    end = time.time()
-
-    # Brag about how fast we are.
-    total_bytes_str = convert_bytes(deserializer.total_tensor_bytes)
-    duration = end - start
-    per_second = convert_bytes(deserializer.total_tensor_bytes / duration)
-    after_mem = get_mem_usage()
-    deserializer.close()
-    print(f"Deserialized {total_bytes_str} in {end - start:0.2f}s, {per_second}/s")
-    print(f"Memory usage before: {before_mem}")
-    print(f"Memory usage after: {after_mem}")

@@ -78,6 +78,7 @@ class ModelConfig:
         enforce_eager: bool = False,
         max_context_len_to_capture: Optional[int] = None,
         tensorizer_path: Optional[str] = None,
+        serialize: bool = False,
     ) -> None:
         self.model = model
         self.tokenizer = tokenizer
@@ -92,6 +93,7 @@ class ModelConfig:
         self.enforce_eager = enforce_eager
         self.max_context_len_to_capture = max_context_len_to_capture
         self.tensorizer_path = tensorizer_path
+        self.serialize = serialize
 
         if os.environ.get("VLLM_USE_MODELSCOPE", "False").lower() == "true":
             # download model from ModelScope hub,
@@ -421,6 +423,7 @@ def _get_and_verify_dtype(
     # NOTE: getattr(config, "torch_dtype", torch.float32) is not correct
     # because config.torch_dtype can be None.
     config_dtype = getattr(config, "torch_dtype", None)
+    print(f"dtype given from config is {config_dtype}")
     if config_dtype is None:
         config_dtype = torch.float32
 

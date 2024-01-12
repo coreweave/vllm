@@ -35,7 +35,8 @@ class EngineArgs:
     quantization: Optional[str] = None
     enforce_eager: bool = False
     max_context_len_to_capture: int = 8192
-    tensorizer_path: Optional[str] = None
+    tensorizer_path: Optional[str] = None,
+    serialize: bool = False
 
     def __post_init__(self):
         if self.tokenizer is None:
@@ -113,6 +114,12 @@ class EngineArgs:
             default=None,
             help="Local path or S3 URI to the tensorized model file to use to"
                  "load the model weights when the `load_format` is `tensorizer`"
+        )
+        parser.add_argument(
+            "--serialize",
+            action='store_true',
+            help="In the event that serialized weights can't be found at"
+                 "tensorizer_path, serialize the weights and upload them there"
         )
         parser.add_argument(
             '--dtype',
@@ -231,7 +238,8 @@ class EngineArgs:
                                    self.dtype, self.seed, self.revision,
                                    self.tokenizer_revision, self.max_model_len,
                                    self.quantization, self.enforce_eager,
-                                   self.max_context_len_to_capture, self.tensorizer_path)
+                                   self.max_context_len_to_capture, self.tensorizer_path,
+                                   self.serialize)
         cache_config = CacheConfig(self.block_size,
                                    self.gpu_memory_utilization,
                                    self.swap_space,
