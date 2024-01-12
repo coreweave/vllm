@@ -4,14 +4,13 @@ from typing import Type
 
 import torch
 import torch.nn as nn
-from transformers import PretrainedConfig, AutoModelForCausalLM
-from tensorizer.utils import no_init_or_tensor
+from transformers import PretrainedConfig
 
 from vllm.config import ModelConfig
 from vllm.model_executor.models import ModelRegistry
 from vllm.model_executor.weight_utils import (get_quant_config,
-                                              initialize_dummy_weights,
-                                              load_tensorized_weights)
+                                              initialize_dummy_weights)
+from vllm.model_executor.tensorizer import TensorizerAgent
 
 
 @contextlib.contextmanager
@@ -66,8 +65,8 @@ def get_model(model_config: ModelConfig) -> nn.Module:
         model_args = model_config.hf_config
         model_args.torch_dtype = model_config.dtype
         if model_config.load_format == "tensorizer":
-            model = no_init_or_tensor(lambda: model_class(*[model_args]))
-            load_tensorized_weights(model, model_config)
+            tensorizer = TensorizerAgent(model_config)
+            return tensorizer.deserialize()
         else:
             with torch.device("cuda"):
                 model = model_class(model_config.hf_config, linear_method)
