@@ -31,11 +31,11 @@ class TensorizerAgent:
 
     def _verify_path_reachable(self):
         try:
-            stream_io.open_stream(self.model_config.tensorizer_path, "rb")
+            stream_io.open_stream(self.model_config.download_dir, "rb")
             return False
         except OSError as err:
             if "Not Found" in str(err) and self.model_config.serialize == True:
-                logger.info(f"Tensors not found and serialize set to True. Will serialize tensors to {self.model_config.tensorizer_path}")
+                logger.info(f"Tensors not found and serialize set to True. Will serialize tensors to {self.model_config.download_dir}")
                 return True
             else:
                 raise OSError(err)
@@ -44,9 +44,9 @@ class TensorizerAgent:
         with torch.device("cuda"):
             model = self.model_cls(self.model_config.hf_config)
         _make_model_contiguous(model)
-        stream = stream_io.open_stream(self.model_config.tensorizer_path, "wb")
+        stream = stream_io.open_stream(self.model_config.download_dir, "wb")
         serializer = TensorSerializer(stream)
-        logger.info(f"Serializing model tensors {self.model_config.model} to {self.model_config.tensorizer_path}.")
+        logger.info(f"Serializing model tensors {self.model_config.model} to {self.model_config.download_dir}.")
         serializer.write_module(model)
         serializer.close()
         logger.info(f"Serialization complete. Running the previous command will deserialize the saved model weights. Closing session..")
@@ -57,7 +57,7 @@ class TensorizerAgent:
         before_mem = get_mem_usage()
         # Lazy load the tensors from S3 into the model.
         start = time.time()
-        stream = stream_io.open_stream(self.model_config.tensorizer_path, "rb")
+        stream = stream_io.open_stream(self.model_config.download_dir, "rb")
         model = _prepare_model_for_deserialization(self.model_cls, self.model_config)
         deserializer = TensorDeserializer(stream, plaid_mode=True)
         deserializer.load_into_module(model)

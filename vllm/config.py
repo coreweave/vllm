@@ -56,11 +56,8 @@ class ModelConfig:
         max_context_len_to_capture: Maximum context len covered by CUDA graphs.
             When a sequence has context length larger than this, we fall back
             to eager mode.
-        tensorizer_path: File path or s3 URI to the tensorizer model weights
-            file to be used when loading the model with tensorizer. Only
-            required when 'load_format' is tensorizer.
         serialize: In the event that serialized weights can't be found at
-            tensorizer_path, serialize the loaded model weights and upload 
+            download_dir, serialize the loaded model weights and upload 
             them there. Does nothing if tensors are found.
     """
 
@@ -80,7 +77,6 @@ class ModelConfig:
         quantization: Optional[str] = None,
         enforce_eager: bool = False,
         max_context_len_to_capture: Optional[int] = None,
-        tensorizer_path: Optional[str] = None,
         serialize: bool = False,
     ) -> None:
         self.model = model
@@ -95,7 +91,6 @@ class ModelConfig:
         self.quantization = quantization
         self.enforce_eager = enforce_eager
         self.max_context_len_to_capture = max_context_len_to_capture
-        self.tensorizer_path = tensorizer_path
         self.serialize = serialize
 
         if os.environ.get("VLLM_USE_MODELSCOPE", "False").lower() == "true":
