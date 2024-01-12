@@ -74,7 +74,7 @@ class TensorizerAgent:
         logger.info(f"Memory usage before: {before_mem}")
         logger.info(f"Memory usage after: {after_mem}")
 
-        return model
+        return model.eval()
 
     def run(self):
         if self.serialize_model:

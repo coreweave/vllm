@@ -59,6 +59,9 @@ class ModelConfig:
         tensorizer_path: File path or s3 URI to the tensorizer model weights
             file to be used when loading the model with tensorizer. Only
             required when 'load_format' is tensorizer.
+        serialize: In the event that serialized weights can't be found at
+            tensorizer_path, serialize the loaded model weights and upload 
+            them there. Does nothing if tensors are found.
     """
 
     def __init__(
