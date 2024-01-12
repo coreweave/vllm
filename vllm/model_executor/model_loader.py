@@ -49,7 +49,7 @@ class TensorizerAgent:
         logger.info(f"Serializing model tensors {self.model_config.model} to {self.model_config.tensorizer_path}.")
         serializer.write_module(model)
         serializer.close()
-        logger.info(f"Serialization complete. Closing session.")
+        logger.info(f"Serialization complete. Running the previous command will deserialize the saved model weights. Closing session..")
         sys.exit(0)
 
     def deserialize(self):
