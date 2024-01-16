@@ -135,6 +135,8 @@ class EngineArgs:
     quantization: Optional[str] = None
     enforce_eager: bool = False
     max_context_len_to_capture: int = 8192
+    tensorizer_args: Optional[TensorizerArgs] = None
+
 
     def __post_init__(self):
         if self.tokenizer is None:
@@ -318,6 +320,10 @@ class EngineArgs:
         attrs = [attr.name for attr in dataclasses.fields(cls)]
         # Set the attributes from the parsed arguments.
         engine_args = cls(**{attr: getattr(args, attr) for attr in attrs})
+        # Check if the load_format is "tensorizer"
+        if args.load_format == "tensorizer":
+            # Create an instance of TensorizerArgs using the from_cli_args method
+            engine_args.tensorizer_args = TensorizerArgs.from_cli_args(args)
         return engine_args
 
     def create_engine_configs(
@@ -329,7 +335,7 @@ class EngineArgs:
                                    self.dtype, self.seed, self.revision,
                                    self.tokenizer_revision, self.max_model_len,
                                    self.quantization, self.enforce_eager,
-                                   self.max_context_len_to_capture)
+                                   self.max_context_len_to_capture, self.tensorizer_args)
         cache_config = CacheConfig(self.block_size,
                                    self.gpu_memory_utilization,
                                    self.swap_space,

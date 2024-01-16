@@ -736,8 +736,6 @@ if __name__ == "__main__":
     engine_args = AsyncEngineArgs.from_cli_args(args)
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     engine_model_config = asyncio.run(engine.get_model_config())
-    if args.load_format == "tensorizer":
-        engine_model_config.tensorizer_args = TensorizerArgs.from_cli_args(args)
     max_model_len = engine_model_config.max_model_len
 
     # A separate tokenizer to map token IDs to strings.

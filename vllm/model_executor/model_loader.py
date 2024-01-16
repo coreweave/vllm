@@ -59,7 +59,6 @@ class TensorizerAgent:
         sys.exit(0)
 
     def deserialize(self):
-        # TODO: add TensorDeserializer args
         before_mem = get_mem_usage()
         # Lazy load the tensors from S3 into the model.
         start = time.time()
