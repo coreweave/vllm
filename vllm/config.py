@@ -79,7 +79,7 @@ class ModelConfig:
         quantization: Optional[str] = None,
         enforce_eager: bool = False,
         max_context_len_to_capture: Optional[int] = None,
-        tensorizer_args: Optional[TensorizerArgs] = None,
+        tensorizer_args = None,
     ) -> None:
         self.model = model
         self.tokenizer = tokenizer
