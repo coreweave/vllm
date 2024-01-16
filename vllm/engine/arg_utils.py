@@ -25,7 +25,6 @@ class TensorizerArgs:
     ]
     device: Optional[Union[torch.device, str]] = None
     dtype: Optional[torch.dtype] = None
-    serialize: bool = False
     serializer_encryption: Optional[bool] = False
     lazy_load: bool = False
     plaid_mode: bool = False
@@ -37,17 +36,17 @@ class TensorizerArgs:
     def __post_init__(self):
         self.file_obj = self.download_dir
         self.serializer_params = {
-            "encryption":self.serializer_encryption
+            "encryption": self.serializer_encryption
         }
 
         # Omitting self.dtype and self.device as this behaves weirdly 
         self.deserializer_params = {
-            "filter_func":self.filter_func,
-            "lazy_load":self.lazy_load,
-            "plaid_mode":self.plaid_mode,
-            "plaid_mode_buffers":self.plaid_mode_buffers,
-            "verify_hash":self.verify_hash,
-            "encryption":self.deserializer_encryption_key,
+            "filter_func": self.filter_func,
+            "lazy_load": self.lazy_load,
+            "plaid_mode": self.plaid_mode,
+            "plaid_mode_buffers": self.plaid_mode_buffers,
+            "verify_hash": self.verify_hash,
+            "encryption": self.deserializer_encryption_key,
             # "dtype":self.dtype,
             # "device":self.device,
         }
@@ -56,47 +55,49 @@ class TensorizerArgs:
     def add_cli_args(
             parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         """Tensorizer CLI arguments"""
-        parser.add_argument(
-            "--serialize",
-            action='store_true',
-            help="In the event that serialized weights can't be found at"
-                 "download_dir, serialize the weights and upload them there"
-        )
+        # TODO: Add support for encryption -- CLI args can be base64 encoded
+        #       key/password for --serializer-encryption. Need to revist
         parser.add_argument(
             "--serializer-encryption",
             action='store_true',
-            help="In the event that serialized weights can't be found at"
-                 "download_dir, serialize the weights and upload them there"
+            help="An `EncryptionParams` object holding a password or key"
+                 "to use for encryption. If None, no encryption will be used."
         )
         parser.add_argument(
             "--lazy-load",
             action='store_true',
-            help="In the event that serialized weights can't be found at"
-                 "download_dir, serialize the weights and upload them there"
+            help="If True, tensors will be loaded and cached when keys are"
+                 "accessed. If False, all tensors will be loaded into memory up"
+                 "front."
         )
         parser.add_argument(
             "--plaid-mode",
             action='store_true',
-            help="In the event that serialized weights can't be found at"
-                 "download_dir, serialize the weights and upload them there"
+            help="If True, tensors will be loaded extremely fast into the"
+                 "target device. This is only supported on CUDA devices,"
+                 "and the buffers are going to be inconsistent due to the extreme"
+                 "naughtiness of reusing a backing buffer. This is only recommended"
+                 "for use with inference, and not training."
         )
         parser.add_argument(
             "--plaid-mode-buffers",
             default=None,
-            help="In the event that serialized weights can't be found at"
-                 "download_dir, serialize the weights and upload them there"
+            help="The number of buffers to use in plaid mode."
+                 "This is only used if ``plaid_mode=True``. These buffers"
+                 "are used to pipeline the loading and processing of tensors."
         )
         parser.add_argument(
             "--verify-hash",
             action='store_true',
-            help="In the event that serialized weights can't be found at"
-                 "download_dir, serialize the weights and upload them there"
+            help="If True, the hashes of each tensor will be verified"
+                 "against the hashes stored in the metadata. A `HashMismatchError`"
+                 "will be raised if any of the hashes do not match."
         )
         parser.add_argument(
             "--deserializer-encryption-key",
             default=None,
-            help="In the event that serialized weights can't be found at"
-                 "download_dir, serialize the weights and upload them there"
+            help="A `DecryptionParams` object holding a password or key"
+                 "to use for decryption. ``None`` (the default) means no decryption."
         )
         return parser
 
@@ -107,6 +108,7 @@ class TensorizerArgs:
         # Set the attributes from the parsed arguments.
         tensorizer_args = cls(**{attr: getattr(args, attr) for attr in attrs if hasattr(args, attr)})
         return tensorizer_args
+
 
 @dataclass
 class EngineArgs:
@@ -138,7 +140,6 @@ class EngineArgs:
     max_context_len_to_capture: int = 8192
     tensorizer_args: Optional[TensorizerArgs] = None
 
-
     def __post_init__(self):
         if self.tokenizer is None:
             self.tokenizer = self.model
@@ -167,22 +168,22 @@ class EngineArgs:
             type=str,
             default=None,
             help='the specific model version to use. It can be a branch '
-            'name, a tag name, or a commit id. If unspecified, will use '
-            'the default version.')
+                 'name, a tag name, or a commit id. If unspecified, will use '
+                 'the default version.')
         parser.add_argument(
             '--tokenizer-revision',
             type=str,
             default=None,
             help='the specific tokenizer version to use. It can be a branch '
-            'name, a tag name, or a commit id. If unspecified, will use '
-            'the default version.')
+                 'name, a tag name, or a commit id. If unspecified, will use '
+                 'the default version.')
         parser.add_argument('--tokenizer-mode',
                             type=str,
                             default=EngineArgs.tokenizer_mode,
                             choices=['auto', 'slow'],
                             help='tokenizer mode. "auto" will use the fast '
-                            'tokenizer if available, and "slow" will '
-                            'always use the slow tokenizer.')
+                                 'tokenizer if available, and "slow" will '
+                                 'always use the slow tokenizer.')
         parser.add_argument('--trust-remote-code',
                             action='store_true',
                             help='trust remote code from huggingface')
@@ -190,25 +191,25 @@ class EngineArgs:
                             type=str,
                             default=EngineArgs.download_dir,
                             help='directory to download and load the weights, '
-                            'default to the default cache dir of '
-                            'huggingface')
+                                 'default to the default cache dir of '
+                                 'huggingface')
         parser.add_argument(
             '--load-format',
             type=str,
             default=EngineArgs.load_format,
             choices=['auto', 'pt', 'safetensors', 'npcache', 'dummy', 'tensorizer'],
             help='The format of the model weights to load. '
-            '"auto" will try to load the weights in the safetensors format '
-            'and fall back to the pytorch bin format if safetensors format '
-            'is not available. '
-            '"pt" will load the weights in the pytorch bin format. '
-            '"safetensors" will load the weights in the safetensors format. '
-            '"npcache" will load the weights in pytorch format and store '
-            'a numpy cache to speed up the loading. '
-            '"dummy" will initialize the weights with random values, '
-            'which is mainly for profiling.'
-            '"tensorizer" will load the weights using tensorizer from CoreWeave,'
-            'which assumes tensorizer_path is set to the location of the serialized weights.')
+                 '"auto" will try to load the weights in the safetensors format '
+                 'and fall back to the pytorch bin format if safetensors format '
+                 'is not available. '
+                 '"pt" will load the weights in the pytorch bin format. '
+                 '"safetensors" will load the weights in the safetensors format. '
+                 '"npcache" will load the weights in pytorch format and store '
+                 'a numpy cache to speed up the loading. '
+                 '"dummy" will initialize the weights with random values, '
+                 'which is mainly for profiling.'
+                 '"tensorizer" will load the weights using tensorizer from CoreWeave,'
+                 'which assumes tensorizer_path is set to the location of the serialized weights.')
         parser.add_argument(
             '--dtype',
             type=str,
@@ -217,19 +218,19 @@ class EngineArgs:
                 'auto', 'half', 'float16', 'bfloat16', 'float', 'float32'
             ],
             help='data type for model weights and activations. '
-            'The "auto" option will use FP16 precision '
-            'for FP32 and FP16 models, and BF16 precision '
-            'for BF16 models.')
+                 'The "auto" option will use FP16 precision '
+                 'for FP32 and FP16 models, and BF16 precision '
+                 'for BF16 models.')
         parser.add_argument('--max-model-len',
                             type=int,
                             default=None,
                             help='model context length. If unspecified, '
-                            'will be automatically derived from the model.')
+                                 'will be automatically derived from the model.')
         # Parallel arguments
         parser.add_argument('--worker-use-ray',
                             action='store_true',
                             help='use Ray for distributed serving, will be '
-                            'automatically set when using more than 1 GPU')
+                                 'automatically set when using more than 1 GPU')
         parser.add_argument('--pipeline-parallel-size',
                             '-pp',
                             type=int,
@@ -244,8 +245,8 @@ class EngineArgs:
             '--max-parallel-loading-workers',
             type=int,
             help='load model sequentially in multiple batches, '
-            'to avoid RAM OOM when using tensor '
-            'parallel and large models')
+                 'to avoid RAM OOM when using tensor '
+                 'parallel and large models')
         # KV cache arguments
         parser.add_argument('--block-size',
                             type=int,
@@ -266,13 +267,13 @@ class EngineArgs:
             type=float,
             default=EngineArgs.gpu_memory_utilization,
             help='the fraction of GPU memory to be used for '
-            'the model executor, which can range from 0 to 1.'
-            'If unspecified, will use the default value of 0.9.')
+                 'the model executor, which can range from 0 to 1.'
+                 'If unspecified, will use the default value of 0.9.')
         parser.add_argument('--max-num-batched-tokens',
                             type=int,
                             default=EngineArgs.max_num_batched_tokens,
                             help='maximum number of batched tokens per '
-                            'iteration')
+                                 'iteration')
         parser.add_argument('--max-num-seqs',
                             type=int,
                             default=EngineArgs.max_num_seqs,
@@ -291,22 +292,22 @@ class EngineArgs:
                             choices=['awq', 'gptq', 'squeezellm', None],
                             default=None,
                             help='Method used to quantize the weights. If '
-                            'None, we first check the `quantization_config` '
-                            'attribute in the model config file. If that is '
-                            'None, we assume the model weights are not '
-                            'quantized and use `dtype` to determine the data '
-                            'type of the weights.')
+                                 'None, we first check the `quantization_config` '
+                                 'attribute in the model config file. If that is '
+                                 'None, we assume the model weights are not '
+                                 'quantized and use `dtype` to determine the data '
+                                 'type of the weights.')
         parser.add_argument('--enforce-eager',
                             action='store_true',
                             help='Always use eager-mode PyTorch. If False, '
-                            'will use eager mode and CUDA graph in hybrid '
-                            'for maximal performance and flexibility.')
+                                 'will use eager mode and CUDA graph in hybrid '
+                                 'for maximal performance and flexibility.')
         parser.add_argument('--max-context-len-to-capture',
                             type=int,
                             default=EngineArgs.max_context_len_to_capture,
                             help='maximum context length covered by CUDA '
-                            'graphs. When a sequence has context length '
-                            'larger than this, we fall back to eager mode.')
+                                 'graphs. When a sequence has context length '
+                                 'larger than this, we fall back to eager mode.')
         return parser
 
     @classmethod
@@ -322,7 +323,7 @@ class EngineArgs:
         return engine_args
 
     def create_engine_configs(
-        self,
+            self,
     ) -> Tuple[ModelConfig, CacheConfig, ParallelConfig, SchedulerConfig]:
         model_config = ModelConfig(self.model, self.tokenizer,
                                    self.tokenizer_mode, self.trust_remote_code,
@@ -360,7 +361,7 @@ class AsyncEngineArgs(EngineArgs):
         parser.add_argument('--engine-use-ray',
                             action='store_true',
                             help='use Ray to start the LLM engine in a '
-                            'separate process as the server process.')
+                                 'separate process as the server process.')
         parser.add_argument('--disable-log-requests',
                             action='store_true',
                             help='disable logging requests')
@@ -368,7 +369,6 @@ class AsyncEngineArgs(EngineArgs):
                             type=int,
                             default=None,
                             help='max number of prompt characters or prompt '
-                            'ID numbers being printed in log. '
-                            'Default: unlimited.')
+                                 'ID numbers being printed in log. '
+                                 'Default: unlimited.')
         return parser
-

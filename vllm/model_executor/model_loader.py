@@ -38,9 +38,9 @@ class TensorizerAgent:
             stream_io.open_stream(self.tensorizer_args.download_dir, "rb")
             return False
         except OSError as err:
-            if "Not Found" in str(err) and self.tensorizer_args.serialize == True:
+            if "Not Found" in str(err):
                 logger.info(
-                    f"Tensors not found and serialize set to True. Will serialize tensors to {self.tensorizer_args.download_dir}")
+                    f"Tensors not found. Will load via HF and serialize tensors to {self.tensorizer_args.download_dir}")
                 return True
             else:
                 raise OSError(err)
