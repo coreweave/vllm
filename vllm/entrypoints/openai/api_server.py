@@ -90,6 +90,7 @@ def parse_args():
                         help="The file path to the SSL cert file")
 
     parser = AsyncEngineArgs.add_cli_args(parser)
+    parser = TensorizerArgs.add_cli_args(parser)
     return parser.parse_args()
 
 

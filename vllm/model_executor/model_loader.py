@@ -64,6 +64,7 @@ class TensorizerAgent:
         start = time.time()
         stream = stream_io.open_stream(self.tensorizer_args.download_dir, "rb")
         model = _prepare_model_for_deserialization(self.model_cls, self.model_config)
+        print(self.deserialize_args)
         deserializer = TensorDeserializer(stream, **self.deserialize_args)
         deserializer.load_into_module(model)
         model = model.to(dtype=self.model_config.dtype)

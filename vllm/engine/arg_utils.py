@@ -36,23 +36,21 @@ class TensorizerArgs:
 
     def __post_init__(self):
         self.file_obj = self.download_dir
-        self.serializer_params = (
-            self.file_obj,
-            None,  ## Placeholder for `compress_tensors`
-            self.serializer_encryption
-        )
+        self.serializer_params = {
+            "encryption":self.serializer_encryption
+        }
 
-        self.deserializer_params = (
-            self.file_obj,
-            self.device,
-            self.filter_func,
-            self.dtype,
-            self.lazy_load,
-            self.plaid_mode,
-            self.plaid_mode_buffers,
-            self.verify_hash,
-            self.deserializer_encryption_key
-        )
+        # Omitting self.dtype and self.device as this behaves weirdly 
+        self.deserializer_params = {
+            "filter_func":self.filter_func,
+            "lazy_load":self.lazy_load,
+            "plaid_mode":self.plaid_mode,
+            "plaid_mode_buffers":self.plaid_mode_buffers,
+            "verify_hash":self.verify_hash,
+            "encryption":self.deserializer_encryption_key,
+            # "dtype":self.dtype,
+            # "device":self.device,
+        }
 
     @staticmethod
     def add_cli_args(
@@ -71,29 +69,32 @@ class TensorizerArgs:
                  "download_dir, serialize the weights and upload them there"
         )
         parser.add_argument(
-            "--lazy_load",
+            "--lazy-load",
             action='store_true',
             help="In the event that serialized weights can't be found at"
                  "download_dir, serialize the weights and upload them there"
         )
         parser.add_argument(
-            "--plaid_mode",
+            "--plaid-mode",
             action='store_true',
             help="In the event that serialized weights can't be found at"
                  "download_dir, serialize the weights and upload them there"
         )
         parser.add_argument(
             "--plaid-mode-buffers",
+            default=None,
             help="In the event that serialized weights can't be found at"
                  "download_dir, serialize the weights and upload them there"
         )
         parser.add_argument(
             "--verify-hash",
+            action='store_true',
             help="In the event that serialized weights can't be found at"
                  "download_dir, serialize the weights and upload them there"
         )
         parser.add_argument(
             "--deserializer-encryption-key",
+            default=None,
             help="In the event that serialized weights can't be found at"
                  "download_dir, serialize the weights and upload them there"
         )
@@ -209,12 +210,6 @@ class EngineArgs:
             '"tensorizer" will load the weights using tensorizer from CoreWeave,'
             'which assumes tensorizer_path is set to the location of the serialized weights.')
         parser.add_argument(
-            "--serialize",
-            action='store_true',
-            help="In the event that serialized weights can't be found at"
-                 "download_dir, serialize the weights and upload them there"
-        )
-        parser.add_argument(
             '--dtype',
             type=str,
             default=EngineArgs.dtype,
@@ -319,8 +314,8 @@ class EngineArgs:
         # Get the list of attributes of this dataclass.
         attrs = [attr.name for attr in dataclasses.fields(cls)]
         # Set the attributes from the parsed arguments.
-        engine_args = cls(**{attr: getattr(args, attr) for attr in attrs})
-        # Check if the load_format is "tensorizer"
+        engine_args = cls(**{attr: getattr(args, attr) for attr in attrs if hasattr(args, attr)})
+        # Check if the tensorizer_args is in the CLI arguments
         if args.load_format == "tensorizer":
             # Create an instance of TensorizerArgs using the from_cli_args method
             engine_args.tensorizer_args = TensorizerArgs.from_cli_args(args)
