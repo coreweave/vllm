@@ -1,11 +1,111 @@
 import argparse
 import dataclasses
+import torch
+import io
+import os
+import typing
+
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union, Callable, Any
 
 from vllm.config import (CacheConfig, ModelConfig, ParallelConfig,
                          SchedulerConfig)
 
+
+@dataclass
+class TensorizerArgs:
+    download_dir: Union[
+        io.BufferedIOBase,
+        io.RawIOBase,
+        typing.BinaryIO,
+        str,
+        bytes,
+        os.PathLike,
+        int,
+    ]
+    device: Optional[Union[torch.device, str]] = None
+    dtype: Optional[torch.dtype] = None
+    serialize: bool = False
+    serializer_encryption: Optional[bool] = False
+    lazy_load: bool = False
+    plaid_mode: bool = False
+    plaid_mode_buffers: Optional[int] = None
+    verify_hash: bool = False
+    filter_func: Optional[Callable[[str], Union[bool, Any]]] = None
+    deserializer_encryption_key: Optional[str] = None
+
+    def __post_init__(self):
+        self.file_obj = self.download_dir
+        self.serializer_params = (
+            self.file_obj,
+            None,  ## Placeholder for `compress_tensors`
+            self.serializer_encrypt_tensors
+        )
+
+        self.deserializer_params = (
+            self.file_obj,
+            self.device,
+            self.filter_func,
+            self.dtype,
+            self.lazy_load,
+            self.plaid_mode,
+            self.plaid_mode_buffers,
+            self.verify_hash,
+            self.deserializer_encryption_key
+        )
+
+    @staticmethod
+    def add_cli_args(
+            parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+        """Tensorizer CLI arguments"""
+        parser.add_argument(
+            "--serialize",
+            action='store_true',
+            help="In the event that serialized weights can't be found at"
+                 "download_dir, serialize the weights and upload them there"
+        )
+        parser.add_argument(
+            "--serializer-encryption",
+            action='store_true',
+            help="In the event that serialized weights can't be found at"
+                 "download_dir, serialize the weights and upload them there"
+        )
+        parser.add_argument(
+            "--lazy_load",
+            action='store_true',
+            help="In the event that serialized weights can't be found at"
+                 "download_dir, serialize the weights and upload them there"
+        )
+        parser.add_argument(
+            "--plaid_mode",
+            action='store_true',
+            help="In the event that serialized weights can't be found at"
+                 "download_dir, serialize the weights and upload them there"
+        )
+        parser.add_argument(
+            "--plaid-mode-buffers",
+            help="In the event that serialized weights can't be found at"
+                 "download_dir, serialize the weights and upload them there"
+        )
+        parser.add_argument(
+            "--verify-hash",
+            help="In the event that serialized weights can't be found at"
+                 "download_dir, serialize the weights and upload them there"
+        )
+        parser.add_argument(
+            "--deserializer-encryption-key",
+            help="In the event that serialized weights can't be found at"
+                 "download_dir, serialize the weights and upload them there"
+        )
+        return parser
+
+    @classmethod
+    def from_cli_args(cls, args: argparse.Namespace) -> 'TensorizerArgs':
+        # Get the list of attributes of this dataclass.
+        attrs = [attr.name for attr in dataclasses.fields(cls)]
+        # Set the attributes from the parsed arguments.
+        tensorizer_args = cls(**{attr: getattr(args, attr) for attr in attrs if hasattr(args, attr)})
+        return tensorizer_args
 
 @dataclass
 class EngineArgs:
@@ -35,7 +135,6 @@ class EngineArgs:
     quantization: Optional[str] = None
     enforce_eager: bool = False
     max_context_len_to_capture: int = 8192
-    serialize: bool = False
 
     def __post_init__(self):
         if self.tokenizer is None:

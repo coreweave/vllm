@@ -18,7 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, Response
 
-from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.engine.arg_utils import AsyncEngineArgs, TensorizerArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.engine.metrics import add_global_metrics_labels
 from vllm.entrypoints.openai.protocol import (
@@ -736,6 +736,8 @@ if __name__ == "__main__":
     engine_args = AsyncEngineArgs.from_cli_args(args)
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     engine_model_config = asyncio.run(engine.get_model_config())
+    if args.load_format == "tensorizer":
+        engine_model_config.tensorizer_args = TensorizerArgs.from_cli_args(args)
     max_model_len = engine_model_config.max_model_len
 
     # A separate tokenizer to map token IDs to strings.
