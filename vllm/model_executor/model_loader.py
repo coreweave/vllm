@@ -54,10 +54,10 @@ class TensorizerAgent:
         stream = stream_io.open_stream(self.tensorizer_args.download_dir, "wb")
         serializer = TensorSerializer(stream, **self.serialize_args)
         logger.info(f"Serializing model tensors {self.model_config.model} to {self.tensorizer_args.download_dir}.")
-        logger.info(
-            f"Serialization complete. Running the previous command will deserialize the saved model weights.")
         serializer.write_module(model)
         serializer.close()
+        logger.info(
+            f"Serialization complete. Running the previous command will deserialize the saved model weights.")
         return model.eval()
 
     def deserialize(self):
