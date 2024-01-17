@@ -4,7 +4,6 @@ import time
 from typing import Type
 
 import torch
-import torch.nn as nn
 from transformers import PretrainedConfig
 
 from vllm.logger import init_logger
@@ -33,6 +32,8 @@ class TensorizerAgent:
         self.serialize_model = self._verify_path_reachable()
 
     def _verify_path_reachable(self):
+        if not self.tensorizer_args.download_dir.endswith(".tensors"):
+            raise ValueError("download_dir must specify a .tensors file if load_format = tensorizer")
         try:
             stream_io.open_stream(self.tensorizer_args.download_dir, "rb")
             return False
