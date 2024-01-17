@@ -29,7 +29,7 @@ class TensorizerAgent:
         self.serialize_args = self.tensorizer_args.serializer_params
         self.deserialize_args = self.tensorizer_args.deserializer_params
 
-        self.serialize_model = self._verify_path_reachable()
+        self.serialize_model = not self._verify_path_reachable()
 
     def _verify_path_reachable(self):
         if not self.tensorizer_args.download_dir.endswith(".tensors"):
@@ -37,13 +37,13 @@ class TensorizerAgent:
                              f"file when load_format = tensorizer")
         try:
             stream_io.open_stream(self.tensorizer_args.download_dir, "rb")
-            return False
+            return True
         except OSError as err:
             if "Not Found" in str(err):
                 logger.info(
                     f"Tensors not found. Will load via HF and serialize tensors to {self.tensorizer_args.download_dir}"
                 )
-                return True
+                return False
             else:
                 raise OSError(err)
 
