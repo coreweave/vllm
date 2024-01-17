@@ -25,7 +25,8 @@ class TensorizerArgs:
     ]
     device: Optional[Union[torch.device, str]] = None
     dtype: Optional[torch.dtype] = None
-    serializer_encryption: Optional[bool] = False
+    ## Commenting out serializer_encryption until I work out how I want to implement it
+    # serializer_encryption: Optional[bool] = False
     lazy_load: bool = False
     plaid_mode: bool = False
     plaid_mode_buffers: Optional[int] = None
@@ -36,7 +37,7 @@ class TensorizerArgs:
     def __post_init__(self):
         self.file_obj = self.download_dir
         self.serializer_params = {
-            "encryption": self.serializer_encryption
+            #    "encryption": self.serializer_encryption
         }
 
         # Omitting self.dtype and self.device as this behaves weirdly 

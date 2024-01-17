@@ -2,7 +2,6 @@
 import contextlib
 import time
 from typing import Type
-import sys
 
 import torch
 import torch.nn as nn
@@ -13,7 +12,6 @@ from vllm.config import ModelConfig
 from vllm.model_executor.models import ModelRegistry
 from vllm.model_executor.weight_utils import (get_quant_config,
                                               initialize_dummy_weights)
-from vllm.engine.arg_utils import TensorizerArgs
 
 from torch import nn
 
@@ -48,15 +46,19 @@ class TensorizerAgent:
     def serialize(self):
         with torch.device("cuda"):
             model = self.model_cls(self.model_config.hf_config)
+        self.model_config.load_format = "auto"
+        model.load_weights(self.model_config.model, self.model_config.download_dir,
+                           self.model_config.load_format, self.model_config.revision,
+                           )
         _make_model_contiguous(model)
         stream = stream_io.open_stream(self.tensorizer_args.download_dir, "wb")
         serializer = TensorSerializer(stream, **self.serialize_args)
         logger.info(f"Serializing model tensors {self.model_config.model} to {self.tensorizer_args.download_dir}.")
+        logger.info(
+            f"Serialization complete. Running the previous command will deserialize the saved model weights.")
         serializer.write_module(model)
         serializer.close()
-        logger.info(
-            f"Serialization complete. Running the previous command will deserialize the saved model weights. Closing session..")
-        sys.exit(0)
+        return model.eval()
 
     def deserialize(self):
         before_mem = get_mem_usage()
@@ -84,7 +86,7 @@ class TensorizerAgent:
 
     def run(self):
         if self.serialize_model:
-            self.serialize()
+            return self.serialize()
         else:
             return self.deserialize()
 

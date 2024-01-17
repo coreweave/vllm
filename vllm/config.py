@@ -423,7 +423,6 @@ def _get_and_verify_dtype(
     # NOTE: getattr(config, "torch_dtype", torch.float32) is not correct
     # because config.torch_dtype can be None.
     config_dtype = getattr(config, "torch_dtype", None)
-    print(f"dtype given from config is {config_dtype}")
     if config_dtype is None:
         config_dtype = torch.float32
 
