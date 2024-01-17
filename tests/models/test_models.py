@@ -50,9 +50,11 @@ def test_models(
         assert hf_output_ids == vllm_output_ids, (
             f"Test{i}:\nHF: {hf_output_ids}\nvLLM: {vllm_output_ids}")
 
+
 def test_get_model_tensorizer(mocker):
     # Mock the 'load_tensorized_weights' function
-    mock_load_tensorized_weights = mocker.patch('vllm.model_executor.weight_utils.load_tensorized_weights')
+    mock_load_tensorized_weights = mocker.patch(
+        'vllm.model_executor.weight_utils.load_tensorized_weights')
 
     # Create a ModelConfig with load_format set to 'tensorizer'
     model_config = ModelConfig(

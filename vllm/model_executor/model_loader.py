@@ -22,6 +22,7 @@ logger = init_logger(__name__)
 
 
 class TensorizerAgent:
+
     def __init__(self, model_cls: Type[nn.Module], model_config: ModelConfig):
         self.model_config = model_config
         self.model_cls = model_cls
@@ -38,7 +39,8 @@ class TensorizerAgent:
         except OSError as err:
             if "Not Found" in str(err):
                 logger.info(
-                    f"Tensors not found. Will load via HF and serialize tensors to {self.tensorizer_args.download_dir}")
+                    f"Tensors not found. Will load via HF and serialize tensors to {self.tensorizer_args.download_dir}"
+                )
                 return True
             else:
                 raise OSError(err)
@@ -47,17 +49,23 @@ class TensorizerAgent:
         with torch.device("cuda"):
             model = self.model_cls(self.model_config.hf_config)
         self.model_config.load_format = "auto"
-        model.load_weights(self.model_config.model, self.model_config.download_dir,
-                           self.model_config.load_format, self.model_config.revision,
-                           )
+        model.load_weights(
+            self.model_config.model,
+            self.model_config.download_dir,
+            self.model_config.load_format,
+            self.model_config.revision,
+        )
         _make_model_contiguous(model)
         stream = stream_io.open_stream(self.tensorizer_args.download_dir, "wb")
         serializer = TensorSerializer(stream, **self.serialize_args)
-        logger.info(f"Serializing model tensors {self.model_config.model} to {self.tensorizer_args.download_dir}.")
+        logger.info(
+            f"Serializing model tensors {self.model_config.model} to {self.tensorizer_args.download_dir}."
+        )
         serializer.write_module(model)
         serializer.close()
         logger.info(
-            f"Serialization complete. Running the previous command will deserialize the saved model weights.")
+            f"Serialization complete. Running the previous command will deserialize the saved model weights."
+        )
         return model.eval()
 
     def deserialize(self):
@@ -65,7 +73,8 @@ class TensorizerAgent:
         # Lazy load the tensors from S3 into the model.
         start = time.time()
         stream = stream_io.open_stream(self.tensorizer_args.download_dir, "rb")
-        model = _prepare_model_for_deserialization(self.model_cls, self.model_config)
+        model = _prepare_model_for_deserialization(self.model_cls,
+                                                   self.model_config)
         print(self.deserialize_args)
         deserializer = TensorDeserializer(stream, **self.deserialize_args)
         deserializer.load_into_module(model)
@@ -78,7 +87,9 @@ class TensorizerAgent:
         per_second = convert_bytes(deserializer.total_tensor_bytes / duration)
         after_mem = get_mem_usage()
         deserializer.close()
-        logger.info(f"Deserialized {total_bytes_str} in {end - start:0.2f}s, {per_second}/s")
+        logger.info(
+            f"Deserialized {total_bytes_str} in {end - start:0.2f}s, {per_second}/s"
+        )
         logger.info(f"Memory usage before: {before_mem}")
         logger.info(f"Memory usage after: {after_mem}")
 
@@ -100,7 +111,8 @@ def _set_default_torch_dtype(dtype: torch.dtype):
     torch.set_default_dtype(old_dtype)
 
 
-def _prepare_model_for_deserialization(model_cls: Type[nn.Module], model_config: ModelConfig):
+def _prepare_model_for_deserialization(model_cls: Type[nn.Module],
+                                       model_config: ModelConfig):
     model_args = model_config.hf_config
     model_args.torch_dtype = model_config.dtype
     model = no_init_or_tensor(lambda: model_cls(*[model_args]))
@@ -165,7 +177,10 @@ def get_model(model_config: ModelConfig) -> nn.Module:
                 initialize_dummy_weights(model)
             else:
                 # Load the weights from the cached or downloaded files.
-                model.load_weights(model_config.model, model_config.download_dir,
-                                   model_config.load_format, model_config.revision,
-                                   )
+                model.load_weights(
+                    model_config.model,
+                    model_config.download_dir,
+                    model_config.load_format,
+                    model_config.revision,
+                )
     return model.eval()
