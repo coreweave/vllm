@@ -33,7 +33,8 @@ class TensorizerAgent:
 
     def _verify_path_reachable(self):
         if not self.tensorizer_args.download_dir.endswith(".tensors"):
-            raise ValueError("download_dir must specify a .tensors file if load_format = tensorizer")
+            raise ValueError(f"download_dir {self.tensorizer_args.download_dir} must specify a .tensors "
+                             f"file when load_format = tensorizer")
         try:
             stream_io.open_stream(self.tensorizer_args.download_dir, "rb")
             return False
