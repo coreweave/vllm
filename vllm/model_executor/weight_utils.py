@@ -206,6 +206,7 @@ def hf_model_weights_iterator(
         load_format, tensorizer_args = dynamic_load_format
     else:
         load_format = dynamic_load_format
+        tensorizer_args = None
     hf_folder, hf_weights_files, use_safetensors = prepare_hf_model_weights(
         model_name_or_path,
         cache_dir=cache_dir,
