@@ -264,7 +264,7 @@ def hf_model_weights_iterator(
             yield name, torch.from_numpy(param)
     elif load_format == "tensorizer":
         logger.info("File is accessible and tensorizer load format specified.")
-        with TensorDeserializer(cache_dir) as state:
+        with TensorDeserializer(cache_dir, plaid_mode=True) as state:
             for name, param in state.items():
                 yield name, param
         del state
