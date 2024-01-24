@@ -1,4 +1,4 @@
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Optional, Union
 import os
 
 import torch
@@ -7,9 +7,6 @@ from transformers import PretrainedConfig
 from vllm.logger import init_logger
 from vllm.transformers_utils.config import get_config
 from vllm.utils import get_cpu_memory, is_hip
-
-if TYPE_CHECKING:
-    from vllm.engine.arg_utils import TensorizerArgs
 
 logger = init_logger(__name__)
 

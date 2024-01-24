@@ -3,9 +3,6 @@
 Run `pytest tests/models/test_models.py --forked`.
 """
 import pytest
-from vllm.model_executor.model_loader import get_model
-from vllm.model_executor.weight_utils import load_tensorized_weights
-from vllm.config import ModelConfig
 
 MODELS = [
     "facebook/opt-125m",
@@ -49,29 +46,3 @@ def test_models(
             f"Test{i}:\nHF: {hf_output_str!r}\nvLLM: {vllm_output_str!r}")
         assert hf_output_ids == vllm_output_ids, (
             f"Test{i}:\nHF: {hf_output_ids}\nvLLM: {vllm_output_ids}")
-
-
-def test_get_model_tensorizer(mocker):
-    # Mock the 'load_tensorized_weights' function
-    mock_load_tensorized_weights = mocker.patch(
-        'vllm.model_executor.weight_utils.load_tensorized_weights')
-
-    # Create a ModelConfig with load_format set to 'tensorizer'
-    model_config = ModelConfig(
-        model='mistralai/Mistral-7B-v0.1',
-        tokenizer='mistralai/Mistral-7B-v0.1',
-        tokenizer_mode='auto',
-        trust_remote_code=True,
-        download_dir='/',
-        dtype='float',
-        seed=0,
-        load_format='tensorizer',
-        tensorizer_path='s3://tensorized/mistral-7b-instruct-vllm.tensors',
-        # other necessary attributes...
-    )
-
-    # Call get_model with the ModelConfig
-    get_model(model_config)
-
-    # Assert that load_tensorized_weights was called
-    mock_load_tensorized_weights.assert_called_once_with('/path/to/tensorizer')

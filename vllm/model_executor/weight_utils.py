@@ -46,8 +46,8 @@ def _shared_pointers(tensors):
 
 
 def convert_bin_to_safetensor_file(
-        pt_filename: str,
-        sf_filename: str,
+    pt_filename: str,
+    sf_filename: str,
 ) -> None:
     loaded = torch.load(pt_filename, map_location="cpu")
     if "state_dict" in loaded:
@@ -84,10 +84,10 @@ def convert_bin_to_safetensor_file(
 
 # TODO(woosuk): Move this to other place.
 def get_quant_config(
-        quantization: str,
-        model_name_or_path: str,
-        hf_config: PretrainedConfig,
-        cache_dir: Optional[str] = None,
+    quantization: str,
+    model_name_or_path: str,
+    hf_config: PretrainedConfig,
+    cache_dir: Optional[str] = None,
 ) -> QuantizationConfig:
     quant_cls = get_quantization_config(quantization)
     # Read the quantization config from the HF model config, if available.
@@ -124,14 +124,15 @@ def get_quant_config(
 
 
 def prepare_hf_model_weights(
-        model_name_or_path: str,
-        cache_dir: Optional[str] = None,
-        load_format: str = "auto",
-        fall_back_to_pt: bool = True,
-        revision: Optional[str] = None,
+    model_name_or_path: str,
+    cache_dir: Optional[str] = None,
+    load_format: str = "auto",
+    fall_back_to_pt: bool = True,
+    revision: Optional[str] = None,
 ) -> Tuple[str, List[str], bool]:
     # Download model weights from huggingface.
-    is_local = os.path.isdir(model_name_or_path) and load_format != "tensorizer"
+    is_local = os.path.isdir(
+        model_name_or_path) and load_format != "tensorizer"
     use_safetensors = False
     # Some quantized models use .pt files for storing the weights.
     if load_format == "auto":
@@ -195,11 +196,11 @@ def prepare_hf_model_weights(
 
 
 def hf_model_weights_iterator(
-        model_name_or_path: str,
-        cache_dir: Optional[str] = None,
-        dynamic_load_format: Union[Tuple, str] = "auto",
-        revision: Optional[str] = None,
-        fall_back_to_pt: Optional[bool] = True,
+    model_name_or_path: str,
+    cache_dir: Optional[str] = None,
+    dynamic_load_format: Union[Tuple, str] = "auto",
+    revision: Optional[str] = None,
+    fall_back_to_pt: Optional[bool] = True,
 ) -> Iterator[Tuple[str, torch.Tensor]]:
     if isinstance(dynamic_load_format, tuple):
         load_format, tensorizer_args = dynamic_load_format
@@ -287,9 +288,9 @@ def default_weight_loader(param: torch.Tensor,
 
 
 def initialize_dummy_weights(
-        model: torch.nn.Module,
-        low: float = -1e-3,
-        high: float = 1e-3,
+    model: torch.nn.Module,
+    low: float = -1e-3,
+    high: float = 1e-3,
 ) -> None:
     """Initialize model weights with random values.
 
