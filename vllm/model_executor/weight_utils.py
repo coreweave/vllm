@@ -1,25 +1,26 @@
 """Utilities for downloading and initializing model weights."""
-import time
-import filelock
 import glob
 import json
 import os
 from collections import defaultdict
 from typing import Any, Iterator, List, Optional, Tuple
 
-from huggingface_hub import snapshot_download
+import boto3
+import filelock
 import numpy as np
-from safetensors.torch import load_file, save_file, safe_open
 import torch
-from transformers import PretrainedConfig
+from botocore.exceptions import ClientError
+from huggingface_hub import snapshot_download
+from safetensors.torch import load_file, save_file, safe_open
 from tqdm.auto import tqdm
-from tensorizer import TensorDeserializer, stream_io
-from tensorizer.utils import convert_bytes, get_mem_usage
+from transformers import PretrainedConfig
+from tensorizer.serialization import TensorDeserializer
 
-from vllm.config import ModelConfig
 from vllm.logger import init_logger
 from vllm.model_executor.layers.quantization import (get_quantization_config,
                                                      QuantizationConfig)
+
+
 
 logger = init_logger(__name__)
 
@@ -37,6 +38,21 @@ def get_lock(model_name_or_path: str, cache_dir: Optional[str] = None):
     return lock
 
 
+
+def can_access_s3_object(uri):
+    s3 = boto3.client('s3')
+
+    bucket, key = uri[5:].split('/', 1)
+
+    try:
+        s3.head_object(Bucket=bucket, Key=key)
+        return True
+    except ClientError as e:
+        # If the object does not exist or if you don't have permission to access it,
+        # boto3 will raise a ClientError.
+        return False
+
+
 def _shared_pointers(tensors):
     ptrs = defaultdict(list)
     for k, v in tensors.items():
@@ -49,8 +65,8 @@ def _shared_pointers(tensors):
 
 
 def convert_bin_to_safetensor_file(
-    pt_filename: str,
-    sf_filename: str,
+        pt_filename: str,
+        sf_filename: str,
 ) -> None:
     loaded = torch.load(pt_filename, map_location="cpu")
     if "state_dict" in loaded:
@@ -87,10 +103,10 @@ def convert_bin_to_safetensor_file(
 
 # TODO(woosuk): Move this to other place.
 def get_quant_config(
-    quantization: str,
-    model_name_or_path: str,
-    hf_config: PretrainedConfig,
-    cache_dir: Optional[str] = None,
+        quantization: str,
+        model_name_or_path: str,
+        hf_config: PretrainedConfig,
+        cache_dir: Optional[str] = None,
 ) -> QuantizationConfig:
     quant_cls = get_quantization_config(quantization)
     # Read the quantization config from the HF model config, if available.
@@ -98,8 +114,8 @@ def get_quant_config(
     if hf_quant_config is not None:
         return quant_cls.from_config(hf_quant_config)
 
-    is_local = os.path.isdir(model_name_or_path)
-    if not is_local:
+    is_retrievable = os.path.isdir(model_name_or_path) or can_access_s3_object(model_name_or_path)
+    if not is_retrievable:
         # Download the config files.
         with get_lock(model_name_or_path, cache_dir):
             hf_folder = snapshot_download(model_name_or_path,
@@ -127,14 +143,14 @@ def get_quant_config(
 
 
 def prepare_hf_model_weights(
-    model_name_or_path: str,
-    cache_dir: Optional[str] = None,
-    load_format: str = "auto",
-    fall_back_to_pt: bool = True,
-    revision: Optional[str] = None,
+        model_name_or_path: str,
+        cache_dir: Optional[str] = None,
+        load_format: str = "auto",
+        fall_back_to_pt: bool = True,
+        revision: Optional[str] = None,
 ) -> Tuple[str, List[str], bool]:
     # Download model weights from huggingface.
-    is_local = os.path.isdir(model_name_or_path)
+    is_retrievable = os.path.isdir(model_name_or_path) or can_access_s3_object(model_name_or_path)
     use_safetensors = False
     # Some quantized models use .pt files for storing the weights.
     if load_format == "auto":
@@ -146,13 +162,15 @@ def prepare_hf_model_weights(
         allow_patterns = ["*.pt"]
     elif load_format == "npcache":
         allow_patterns = ["*.bin"]
+    elif load_format == "tensorizer":
+        allow_patterns = ["*.tensors"]
     else:
         raise ValueError(f"Unknown load_format: {load_format}")
 
     if fall_back_to_pt:
         allow_patterns += ["*.pt"]
 
-    if not is_local:
+    if not is_retrievable:
         # Use file lock to prevent multiple processes from
         # downloading the same model weights at the same time.
         with get_lock(model_name_or_path, cache_dir):
@@ -193,12 +211,13 @@ def prepare_hf_model_weights(
 
 
 def hf_model_weights_iterator(
-    model_name_or_path: str,
-    cache_dir: Optional[str] = None,
-    load_format: str = "auto",
-    revision: Optional[str] = None,
-    fall_back_to_pt: Optional[bool] = True,
+        model_name_or_path: str,
+        cache_dir: Optional[str] = None,
+        load_format: str = "auto",
+        revision: Optional[str] = None,
+        fall_back_to_pt: Optional[bool] = True,
 ) -> Iterator[Tuple[str, torch.Tensor]]:
+    is_retrievable = os.path.isdir(model_name_or_path) or can_access_s3_object(model_name_or_path)
     hf_folder, hf_weights_files, use_safetensors = prepare_hf_model_weights(
         model_name_or_path,
         cache_dir=cache_dir,
@@ -238,6 +257,12 @@ def hf_model_weights_iterator(
             with open(param_path, "rb") as f:
                 param = np.load(f)
             yield name, torch.from_numpy(param)
+    elif load_format == "tensorizer" and is_retrievable:
+        logger.info("File is accessible and tensorizer load format specified.")
+        with TensorDeserializer(model_name_or_path) as state:
+            for name, param in state.items():
+                yield name, param
+        del state
     elif use_safetensors:
         for st_file in hf_weights_files:
             with safe_open(st_file, framework="pt") as f:
@@ -276,9 +301,9 @@ def default_weight_loader(param: torch.Tensor,
 
 
 def initialize_dummy_weights(
-    model: torch.nn.Module,
-    low: float = -1e-3,
-    high: float = 1e-3,
+        model: torch.nn.Module,
+        low: float = -1e-3,
+        high: float = 1e-3,
 ) -> None:
     """Initialize model weights with random values.
 
