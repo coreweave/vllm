@@ -178,6 +178,7 @@ def get_model(model_config: ModelConfig) -> nn.Module:
             initialize_dummy_weights(model)
         else:
             # Load the weights from the cached or downloaded files.
+            logger.info(f"Download dir is {model_config.download_dir}")
             model.load_weights(
                 model_config.model,
                 model_config.download_dir,

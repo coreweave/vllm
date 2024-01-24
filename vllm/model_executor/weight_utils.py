@@ -50,6 +50,7 @@ def can_access_s3_object(uri):
     except ClientError as e:
         # If the object does not exist or if you don't have permission to access it,
         # boto3 will raise a ClientError.
+        print(e)
         return False
 
 
@@ -114,8 +115,8 @@ def get_quant_config(
     if hf_quant_config is not None:
         return quant_cls.from_config(hf_quant_config)
 
-    is_retrievable = os.path.isdir(model_name_or_path) or can_access_s3_object(model_name_or_path)
-    if not is_retrievable:
+    is_local = os.path.isdir(model_name_or_path)
+    if not is_local:
         # Download the config files.
         with get_lock(model_name_or_path, cache_dir):
             hf_folder = snapshot_download(model_name_or_path,
@@ -150,7 +151,7 @@ def prepare_hf_model_weights(
         revision: Optional[str] = None,
 ) -> Tuple[str, List[str], bool]:
     # Download model weights from huggingface.
-    is_retrievable = os.path.isdir(model_name_or_path) or can_access_s3_object(model_name_or_path)
+    is_local = os.path.isdir(model_name_or_path) and load_format != "tensorizer"
     use_safetensors = False
     # Some quantized models use .pt files for storing the weights.
     if load_format == "auto":
@@ -170,7 +171,7 @@ def prepare_hf_model_weights(
     if fall_back_to_pt:
         allow_patterns += ["*.pt"]
 
-    if not is_retrievable:
+    if not is_local:
         # Use file lock to prevent multiple processes from
         # downloading the same model weights at the same time.
         with get_lock(model_name_or_path, cache_dir):
@@ -202,6 +203,9 @@ def prepare_hf_model_weights(
             f for f in hf_weights_files
             if not any(f.endswith(x) for x in blacklist)
         ]
+        
+    if load_format == "tensorizer":
+        return hf_folder, hf_weights_files, use_safetensors
 
     if len(hf_weights_files) == 0:
         raise RuntimeError(
@@ -217,14 +221,15 @@ def hf_model_weights_iterator(
         revision: Optional[str] = None,
         fall_back_to_pt: Optional[bool] = True,
 ) -> Iterator[Tuple[str, torch.Tensor]]:
-    is_retrievable = os.path.isdir(model_name_or_path) or can_access_s3_object(model_name_or_path)
+    is_local = os.path.isdir(model_name_or_path) and load_format != "tensorizer"
+    logger.info(model_name_or_path)
     hf_folder, hf_weights_files, use_safetensors = prepare_hf_model_weights(
         model_name_or_path,
         cache_dir=cache_dir,
         load_format=load_format,
         fall_back_to_pt=fall_back_to_pt,
         revision=revision)
-
+    logger.info(model_name_or_path)
     if load_format == "npcache":
         # Currently np_cache only support *.bin checkpoints
         assert use_safetensors is False
@@ -257,9 +262,9 @@ def hf_model_weights_iterator(
             with open(param_path, "rb") as f:
                 param = np.load(f)
             yield name, torch.from_numpy(param)
-    elif load_format == "tensorizer" and is_retrievable:
+    elif load_format == "tensorizer":
         logger.info("File is accessible and tensorizer load format specified.")
-        with TensorDeserializer(model_name_or_path) as state:
+        with TensorDeserializer(cache_dir) as state:
             for name, param in state.items():
                 yield name, param
         del state
@@ -270,6 +275,7 @@ def hf_model_weights_iterator(
                     param = f.get_tensor(name)
                     yield name, param
     else:
+        logger.info("Using torch load")
         for bin_file in hf_weights_files:
             state = torch.load(bin_file, map_location="cpu")
             for name, param in state.items():
