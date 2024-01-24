@@ -3,7 +3,7 @@ import glob
 import json
 import os
 from collections import defaultdict
-from typing import Any, Iterator, List, Optional, Tuple
+from typing import Any, Iterator, List, Optional, Tuple, Union
 
 import filelock
 import numpy as np
@@ -17,8 +17,6 @@ from tensorizer.serialization import TensorDeserializer
 from vllm.logger import init_logger
 from vllm.model_executor.layers.quantization import (get_quantization_config,
                                                      QuantizationConfig)
-
-
 
 logger = init_logger(__name__)
 
@@ -34,6 +32,7 @@ def get_lock(model_name_or_path: str, cache_dir: Optional[str] = None):
     lock_file_name = model_name_or_path.replace("/", "-") + ".lock"
     lock = filelock.FileLock(os.path.join(lock_dir, lock_file_name))
     return lock
+
 
 def _shared_pointers(tensors):
     ptrs = defaultdict(list)
@@ -184,7 +183,7 @@ def prepare_hf_model_weights(
             f for f in hf_weights_files
             if not any(f.endswith(x) for x in blacklist)
         ]
-        
+
     if load_format == "tensorizer":
         return hf_folder, hf_weights_files, use_safetensors
 
@@ -198,19 +197,20 @@ def prepare_hf_model_weights(
 def hf_model_weights_iterator(
         model_name_or_path: str,
         cache_dir: Optional[str] = None,
-        load_format: str = "auto",
+        dynamic_load_format: Union[Tuple, str] = "auto",
         revision: Optional[str] = None,
         fall_back_to_pt: Optional[bool] = True,
 ) -> Iterator[Tuple[str, torch.Tensor]]:
-    is_local = os.path.isdir(model_name_or_path) and load_format != "tensorizer"
-    logger.info(model_name_or_path)
+    if isinstance(dynamic_load_format, tuple):
+        load_format, tensorizer_args = dynamic_load_format
+    else:
+        load_format = dynamic_load_format
     hf_folder, hf_weights_files, use_safetensors = prepare_hf_model_weights(
         model_name_or_path,
         cache_dir=cache_dir,
         load_format=load_format,
         fall_back_to_pt=fall_back_to_pt,
         revision=revision)
-    logger.info(model_name_or_path)
     if load_format == "npcache":
         # Currently np_cache only support *.bin checkpoints
         assert use_safetensors is False
@@ -244,8 +244,8 @@ def hf_model_weights_iterator(
                 param = np.load(f)
             yield name, torch.from_numpy(param)
     elif load_format == "tensorizer":
-        logger.info("File is accessible and tensorizer load format specified.")
-        with TensorDeserializer(cache_dir, plaid_mode=True) as state:
+        deserializer_args = tensorizer_args.deserializer_params
+        with TensorDeserializer(cache_dir, **deserializer_args) as state:
             for name, param in state.items():
                 yield name, param
         del state
@@ -256,7 +256,6 @@ def hf_model_weights_iterator(
                     param = f.get_tensor(name)
                     yield name, param
     else:
-        logger.info("Using torch load")
         for bin_file in hf_weights_files:
             state = torch.load(bin_file, map_location="cpu")
             for name, param in state.items():
