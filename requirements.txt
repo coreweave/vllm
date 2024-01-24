@@ -8,7 +8,6 @@ torch == 2.1.2
 # xformers == 0.0.23.post1  # Required for CUDA 12.1.
 tensorizer == 2.7.1
 fastapi
-boto3
 uvicorn[standard]
 pydantic == 1.10.13  # Required for OpenAI server.
 aioprometheus[starlette]

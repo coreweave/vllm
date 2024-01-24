@@ -5,11 +5,9 @@ import os
 from collections import defaultdict
 from typing import Any, Iterator, List, Optional, Tuple
 
-import boto3
 import filelock
 import numpy as np
 import torch
-from botocore.exceptions import ClientError
 from huggingface_hub import snapshot_download
 from safetensors.torch import load_file, save_file, safe_open
 from tqdm.auto import tqdm
@@ -36,23 +34,6 @@ def get_lock(model_name_or_path: str, cache_dir: Optional[str] = None):
     lock_file_name = model_name_or_path.replace("/", "-") + ".lock"
     lock = filelock.FileLock(os.path.join(lock_dir, lock_file_name))
     return lock
-
-
-
-def can_access_s3_object(uri):
-    s3 = boto3.client('s3')
-
-    bucket, key = uri[5:].split('/', 1)
-
-    try:
-        s3.head_object(Bucket=bucket, Key=key)
-        return True
-    except ClientError as e:
-        # If the object does not exist or if you don't have permission to access it,
-        # boto3 will raise a ClientError.
-        print(e)
-        return False
-
 
 def _shared_pointers(tensors):
     ptrs = defaultdict(list)
