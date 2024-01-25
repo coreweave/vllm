@@ -1,11 +1,14 @@
 """Utilities for downloading and initializing model weights."""
+import filelock
 import glob
+import fnmatch
 import json
 import os
 from collections import defaultdict
 from typing import Any, Iterator, List, Optional, Tuple, Union
 
-import filelock
+
+from huggingface_hub import snapshot_download, HfFileSystem
 import numpy as np
 import torch
 from huggingface_hub import snapshot_download
@@ -153,6 +156,18 @@ def prepare_hf_model_weights(
         allow_patterns += ["*.pt"]
 
     if not is_local:
+        # Before we download we look at that is available:
+        fs = HfFileSystem()
+        file_list = fs.ls(model_name_or_path, detail=False, revision=revision)
+
+        # depending on what is available we download different things
+        for pattern in allow_patterns:
+            matching = fnmatch.filter(file_list, pattern)
+            if len(matching) > 0:
+                allow_patterns = [pattern]
+                break
+
+        logger.info(f"Using model weights format {allow_patterns}")
         # Use file lock to prevent multiple processes from
         # downloading the same model weights at the same time.
         with get_lock(model_name_or_path, cache_dir):
