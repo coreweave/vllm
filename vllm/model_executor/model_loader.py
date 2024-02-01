@@ -3,12 +3,14 @@ import contextlib
 from typing import Optional, Type
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 from vllm.config import DeviceConfig, ModelConfig, LoRAConfig
+from vllm.logger import init_logger
 from vllm.model_executor.models import ModelRegistry
-from vllm.model_executor.weight_utils import (get_quant_config,
-                                              initialize_dummy_weights)
+from vllm.model_executor.weight_utils import get_quant_config, initialize_dummy_weights
+
+logger = init_logger(__name__)
 
 
 @contextlib.contextmanager
@@ -34,12 +36,13 @@ def _get_model_architecture(model_config: ModelConfig) -> Type[nn.Module]:
             return model_cls
     raise ValueError(
         f"Model architectures {architectures} are not supported for now. "
-        f"Supported architectures: {ModelRegistry.get_supported_archs()}")
+        f"Supported architectures: {ModelRegistry.get_supported_archs()}"
+    )
 
 
-def get_model(model_config: ModelConfig,
-              device_config: DeviceConfig,
-              lora_config: Optional[LoRAConfig] = None) -> nn.Module:
+def get_model(
+    model_config: ModelConfig,device_config: DeviceConfig, lora_config: Optional[LoRAConfig] = None
+) -> nn.Module:
     model_class = _get_model_architecture(model_config)
 
     # Get the (maybe quantized) linear method.
@@ -53,13 +56,15 @@ def get_model(model_config: ModelConfig,
                 f"The quantization method {model_config.quantization} is not "
                 "supported for the current GPU. "
                 f"Minimum capability: {quant_config.get_min_capability()}. "
-                f"Current capability: {capability}.")
+                f"Current capability: {capability}."
+            )
         supported_dtypes = quant_config.get_supported_act_dtypes()
         if model_config.dtype not in supported_dtypes:
             raise ValueError(
                 f"{model_config.dtype} is not supported for quantization "
                 f"method {model_config.quantization}. Supported dtypes: "
-                f"{supported_dtypes}")
+                f"{supported_dtypes}"
+            )
         linear_method = quant_config.get_linear_method()
 
     with _set_default_torch_dtype(model_config.dtype):
@@ -74,7 +79,8 @@ def get_model(model_config: ModelConfig,
                     f"Model {model_class.__name__} does not support LoRA, "
                     "but LoRA is enabled. Support for this model may "
                     "be added in the future. If this is important to you, "
-                    "please open an issue on github.")
+                    "please open an issue on github."
+                )
             else:
                 model = model_class(model_config.hf_config, linear_method)
         if model_config.load_format == "dummy":
@@ -83,6 +89,13 @@ def get_model(model_config: ModelConfig,
             initialize_dummy_weights(model)
         else:
             # Load the weights from the cached or downloaded files.
-            model.load_weights(model_config.model, model_config.download_dir,
-                               model_config.load_format, model_config.revision)
+            if model_config.load_format == "tensorizer":
+                # Provide a dynamic load format for `model.load_weights` to retain tensorizer args from CLI.
+                model_config.load_format = ("tensorizer", model_config.tensorizer_args)
+            model.load_weights(
+                model_config.model,
+                model_config.download_dir,
+                model_config.load_format,
+                model_config.revision,
+            )
     return model.eval()

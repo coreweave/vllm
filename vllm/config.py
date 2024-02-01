@@ -75,6 +75,7 @@ class ModelConfig:
         quantization: Optional[str] = None,
         enforce_eager: bool = False,
         max_context_len_to_capture: Optional[int] = None,
+        tensorizer_args=None,
     ) -> None:
         self.model = model
         self.tokenizer = tokenizer
@@ -88,6 +89,7 @@ class ModelConfig:
         self.quantization = quantization
         self.enforce_eager = enforce_eager
         self.max_context_len_to_capture = max_context_len_to_capture
+        self.tensorizer_args = tensorizer_args
 
         if os.environ.get("VLLM_USE_MODELSCOPE", "False").lower() == "true":
             # download model from ModelScope hub,
@@ -115,13 +117,14 @@ class ModelConfig:
     def _verify_load_format(self) -> None:
         load_format = self.load_format.lower()
         supported_load_format = [
-            "auto", "pt", "safetensors", "npcache", "dummy"
+            "auto", "pt", "safetensors", "npcache", "dummy", "tensorizer"
         ]
         rocm_not_supported_load_format = []
         if load_format not in supported_load_format:
             raise ValueError(
                 f"Unknown load format: {self.load_format}. Must be one of "
-                "'auto', 'pt', 'safetensors', 'npcache', or 'dummy'.")
+                "'auto', 'pt', 'safetensors', 'npcache', 'tensorizer', or 'dummy'."
+            )
         if is_hip() and load_format in rocm_not_supported_load_format:
             rocm_supported_load_format = [
                 f for f in supported_load_format
