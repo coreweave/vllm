@@ -4,6 +4,7 @@ from typing import Optional, Type
 
 import torch
 from transformers import PretrainedConfig
+import torch.nn as nn
 
 from vllm.logger import init_logger
 from vllm.config import ModelConfig, LoRAConfig
@@ -25,8 +26,14 @@ def _set_default_torch_dtype(dtype: torch.dtype):
     torch.set_default_dtype(old_dtype)
 
 
-def _get_model_architecture(config: PretrainedConfig) -> Type[nn.Module]:
-    architectures = getattr(config, "architectures", [])
+def _get_model_architecture(model_config: ModelConfig) -> Type[nn.Module]:
+    architectures = getattr(model_config.hf_config, "architectures", [])
+    # Special handling for quantized Mixtral.
+    # FIXME(woosuk): This is a temporary hack.
+    if (model_config.quantization is not None
+            and "MixtralForCausalLM" in architectures):
+        architectures = ["QuantMixtralForCausalLM"]
+
     for arch in architectures:
         model_cls = ModelRegistry.load_model_cls(arch)
         if model_cls is not None:
@@ -38,7 +45,7 @@ def _get_model_architecture(config: PretrainedConfig) -> Type[nn.Module]:
 
 def get_model(model_config: ModelConfig,
               lora_config: Optional[LoRAConfig] = None) -> nn.Module:
-    model_class = _get_model_architecture(model_config.hf_config)
+    model_class = _get_model_architecture(model_config)
 
     # Get the (maybe quantized) linear method.
     linear_method = None
