@@ -20,7 +20,7 @@ from vllm.config import (
 
 @dataclass
 class TensorizerArgs:
-    download_dir: Union[
+    tensorizer_uri: Union[
         io.BufferedIOBase,
         io.RawIOBase,
         typing.BinaryIO,
@@ -40,7 +40,7 @@ class TensorizerArgs:
     deserializer_encryption_key: Optional[str] = None
 
     def __post_init__(self):
-        self.file_obj = self.download_dir
+        self.file_obj = self.tensorizer_uri
         self.s3_access_key_id = os.environ.get("S3_ACCESS_KEY_ID") or None
         self.s3_secret_access_key = os.environ.get("S3_SECRET_ACCESS_KEY") or None
         self.s3_endpoint = os.environ.get("S3_ENDPOINT_URL") or None
@@ -84,6 +84,12 @@ class TensorizerArgs:
             help="If True, tensors will be loaded and cached when keys are"
             "accessed. If False, all tensors will be loaded into memory up"
             "front.",
+        )
+        parser.add_argument(
+            "--tensorizer-uri",
+            action="store_true",
+            help="Path to serialized model tensors. Can be a local file path"
+                 "or a S3 URI.",
         )
         parser.add_argument(
             "--plaid-mode-buffers",
@@ -236,7 +242,7 @@ class EngineArgs:
             '"dummy" will initialize the weights with random values, '
             "which is mainly for profiling."
             '"tensorizer" will load the weights using tensorizer from CoreWeave,'
-            "which assumes tensorizer_path is set to the location of the serialized weights.",
+            "which assumes `tensorizer_uri` is set to the location of the serialized weights.",
         )
         parser.add_argument(
             "--dtype",
