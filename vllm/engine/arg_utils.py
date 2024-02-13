@@ -87,7 +87,6 @@ class TensorizerArgs:
         )
         parser.add_argument(
             "--tensorizer-uri",
-            action="store_true",
             help="Path to serialized model tensors. Can be a local file path"
                  "or a S3 URI.",
         )
