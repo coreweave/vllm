@@ -72,8 +72,10 @@ def get_model(
         # The weights will be initialized as empty tensors.
         with torch.device(device_config.device):
             if hasattr(model_class, "supported_lora_modules"):
-                model = model_class(model_config.hf_config, linear_method,
-                                    lora_config)
+                from vllm.model_executor.tensorizer_loader import zero_length_init
+                with zero_length_init():
+                    model = model_class(model_config.hf_config, linear_method,
+                                        lora_config)
             elif lora_config:
                 raise ValueError(
                     f"Model {model_class.__name__} does not support LoRA, "
