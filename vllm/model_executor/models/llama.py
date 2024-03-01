@@ -47,7 +47,6 @@ from vllm.model_executor.weight_utils import (default_weight_loader,
 from vllm.sequence import SamplerOutput
 from vllm.config import LoRAConfig
 
-from vllm.model_executor.tensorizer_loader import tensorizer_loader, tensorizer_weight_loader
 KVCache = Tuple[torch.Tensor, torch.Tensor]
 
 
@@ -360,7 +359,6 @@ class LlamaForCausalLM(nn.Module):
         params_dict = dict(self.named_parameters())
         for name, loaded_weight in hf_model_weights_iterator(
                 model_name_or_path, cache_dir, load_format, revision):
-            original_name = name
             if "rotary_emb.inv_freq" in name:
                 continue
             if ("rotary_emb.cos_cached" in name
@@ -380,11 +378,10 @@ class LlamaForCausalLM(nn.Module):
                 weight_loader(param, loaded_weight, shard_id)
                 break
             else:
-            # Skip loading extra bias for GPTQ models.
+                # Skip loading extra bias for GPTQ models.
                 if name.endswith(".bias") and name not in params_dict:
                     continue
                 param = params_dict[name]
                 weight_loader = getattr(param, "weight_loader",
-                                        tensorizer_weight_loader)
-                assert type(param) == nn.Parameter
-                weight_loader(param, weight_loader)
+                                        default_weight_loader)
+                weight_loader(param, loaded_weight)

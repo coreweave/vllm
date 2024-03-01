@@ -24,6 +24,7 @@ from vllm.model_executor.layers.quantization import (get_quantization_config,
 
 logger = init_logger(__name__)
 
+cache_status = None
 
 class Disabledtqdm(tqdm):
 
@@ -217,6 +218,7 @@ def hf_model_weights_iterator(
     revision: Optional[str] = None,
     fall_back_to_pt: Optional[bool] = True,
 ) -> Iterator[Tuple[str, torch.Tensor]]:
+    global cache_status
     if isinstance(dynamic_load_format, tuple):
         load_format, tensorizer_args = dynamic_load_format
     else:
@@ -270,6 +272,8 @@ def hf_model_weights_iterator(
         credentials = tensorizer_args.credentials
         stream = open_stream(tensorizer_args.tensorizer_uri, **credentials)
         with TensorDeserializer(stream, **deserializer_args, device="cpu") as state:
+            cache_status = state.cache_status
+            print(cache_status)
             for name, param in state.items():
                 yield name, param
         del state

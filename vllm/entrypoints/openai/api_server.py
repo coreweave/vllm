@@ -215,8 +215,26 @@ if __name__ == "__main__":
     else:
         served_model = args.model
 
+    import time
+    from tensorizer.utils import get_mem_usage
+    import sys
+    start = time.time()
+    mem_usage_before = get_mem_usage()
+    filename = "results_lazy_load.csv"
+
     engine_args = AsyncEngineArgs.from_cli_args(args)
     engine = AsyncLLMEngine.from_engine_args(engine_args)
+
+    mem_usage_after = get_mem_usage()
+    end = time.time()
+    duration = end - start
+    from vllm.model_executor.weight_utils import cache_status
+    if not os.path.exists(filename):
+        with open(filename, "w") as f:
+            f.write("load_format,model,mem_usage_before,mem_usage_after,duration,cache_status\n")
+    with open(filename, "a") as f:
+        f.write(f"{args.load_format},{args.model},{mem_usage_before},{mem_usage_after},{duration},{cache_status}\n")
+    sys.exit(1)
     openai_serving_chat = OpenAIServingChat(engine, served_model,
                                             args.response_role,
                                             args.chat_template)
