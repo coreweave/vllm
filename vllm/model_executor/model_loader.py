@@ -3,14 +3,20 @@ import contextlib
 from typing import Type
 
 import torch
-from torch import nn
-
+import time
 from vllm.config import DeviceConfig, ModelConfig
 from vllm.logger import init_logger
 from vllm.model_executor.models import ModelRegistry
-from vllm.model_executor.weight_utils import get_quant_config, initialize_dummy_weights
+from vllm.model_executor.weight_utils import (get_quant_config,
+                                              initialize_dummy_weights)
+from vllm.model_executor.tensorizer_loader import load_with_tensorizer, _is_vllm_model
+
+from torch import nn
+
+
 
 logger = init_logger(__name__)
+
 
 
 @contextlib.contextmanager
@@ -43,7 +49,7 @@ def _get_model_architecture(model_config: ModelConfig) -> Type[nn.Module]:
 def get_model(
     model_config: ModelConfig,device_config: DeviceConfig,**kwargs) -> nn.Module:
     lora_config = kwargs.get("lora_config", None
-) 
+)
     model_class = _get_model_architecture(model_config)
 
     # Get the (maybe quantized) linear method.
@@ -72,11 +78,12 @@ def get_model(
         # Create a model instance.
         # The weights will be initialized as empty tensors.
         with torch.device(device_config.device):
-            if hasattr(model_class, "supported_lora_modules"):
-                from vllm.model_executor.tensorizer_loader import zero_length_init
-                with zero_length_init():
-                    model = model_class(model_config.hf_config, linear_method,
-                                        lora_config)
+            if model_config.load_format == "tensorizer" and _is_vllm_model(model_config):
+                model = load_with_tensorizer(model_class, model_config)
+                return model.eval()
+            elif hasattr(model_class, "supported_lora_modules"):
+                model = model_class(model_config.hf_config, linear_method,
+                                    lora_config)
             elif lora_config:
                 raise ValueError(
                     f"Model {model_class.__name__} does not support LoRA, "
@@ -93,6 +100,7 @@ def get_model(
         else:
             # Load the weights from the cached or downloaded files.
             if model_config.load_format == "tensorizer":
+                ## TODO: Make this less confusing
                 # Provide a dynamic load format for `model.load_weights` to retain tensorizer args from CLI.
                 model_config.load_format = ("tensorizer", model_config.tensorizer_args)
             model.load_weights(
