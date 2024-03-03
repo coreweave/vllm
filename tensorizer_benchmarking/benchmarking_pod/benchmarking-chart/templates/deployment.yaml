@@ -1,19 +1,11 @@
-{{- range .Values.deployments }}
-apiVersion: apps/v1
-kind: Deployment
+{{- range $v := .Values.deployments }}
+---
+apiVersion: batch/v1
+kind: Job
 metadata:
-  name: {{ .load_format }}{{ .plaid_mode }}{{ .lazy_load}}
+  name: {{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load}}
 spec:
-  strategy:
-    type: Recreate
-  replicas: 2
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: {{ .load_format }}{{ .plaid_mode }}{{ .lazy_load }}
   template:
-    metadata:
-      labels:
-        app.kubernetes.io/name: {{ .load_format }}{{ .plaid_mode }}{{ .lazy_load }}
     spec:
       containers:
         - name: run-benchmark
@@ -27,18 +19,18 @@ spec:
               cd vllm
               export MAX_JOBS=8
               pip install .
-              num_iterations=10
+              num_iterations=50
               
               unique_id=$(date +%s)  # generate a unique identifier based on the current timestamp
               models="EleutherAI/pythia-1.4b mistralai/Mistral-7B-v0.1 meta-llama/Llama-2-13b-hf"
               download_dir=~/.cache/weights
-              python_command="python vllm/entrypoints/openai/api_server.py --host 0.0.0.0 --load-format {{ .load_format }}"
-              if [ "{{ .load_format }}" = "tensorizer" ]; then
-                python_command="$python_command {{ .lazy_load }}"
+              python_command="python vllm/entrypoints/openai/api_server.py --host 0.0.0.0 --load-format {{ $v.load_format }}"
+              if [ "{{ $v.load_format }}" = "tensorizer" ]; then
+                python_command="$python_command {{ $v.lazy_load }}"
                 if [ "$model" = "meta-llama/Llama-2-13b-hf" ]; then
-                  if [ -n "{{ .plaid_mode }}" ]; then
+                  if [ -n "{{ $v.plaid_mode }}" ]; then
                     tensorizer_uri="s3://tensorized-ssteel/Llama-2-13b-hf-vllm.tensors"
-                    python_command="$python_command {{ .plaid_mode }}"
+                    python_command="$python_command {{ $v.plaid_mode }}"
                   else
                     tensorizer_uri="s3://tensorized-ssteel/meta-llama/Llama-2-13b-hf/model.tensors"
                   fi
@@ -50,7 +42,10 @@ spec:
               tensorizer_downloaded=false
               for model in $models; do
                 for i in $(seq 1 $num_iterations); do
-                  if [ $i -eq $((num_iterations/2 + 1)) ] && [ "{{ .load_format }}" = "tensorizer" ] && [ "$tensorizer_downloaded" = false ]; then
+                  echo "========================================================"
+                  echo "Running iteration ${i} for model $model"
+                  echo "========================================================"
+                  if [ $i -eq $((num_iterations/2 + 1)) ] && [ "{{ $v.load_format }}" = "tensorizer" ] && [ "$tensorizer_downloaded" = false ]; then
                     # Download the tensorizer_uri locally with s3
                     s3cmd get $tensorizer_uri $download_dir/
                     # Specify the local path as the new tensorizer_uri
@@ -59,26 +54,27 @@ spec:
                     tensorizer_downloaded=true
                   fi
                   eval $python_command --model $model
-                  if [ $i -le $((num_iterations/2)) ] && [ "{{ .load_format }}" != "tensorizer" ]; then
+                  if [ $i -le $((num_iterations/2)) ] && [ "{{ $v.load_format }}" != "tensorizer" ]; then
                     rm -rf $download_dir
                   fi
                   if [ $(($i % 10)) -eq 0 ]; then
-                    s3_path="s3://tensorized-ssteel/vllm-benchmarks/$unique_id/{{ .load_format }}/$model"
+                    s3_path="s3://tensorized-ssteel/vllm-benchmarks/$unique_id/{{ $v.load_format }}/$model"
                     if [ $i -lt $((num_iterations/2 + 1)) ]; then
                       s3_path="$s3_path/non_local"
                     else
                       s3_path="$s3_path/local"
                     fi
-                    if [ -n "{{ .lazy_load }}" ]; then
-                      s3_path="$s3_path/{{ .lazy_load }}"
+                    if [ -n "{{ $v.lazy_load }}" ]; then
+                      s3_path="$s3_path/{{ $v.lazy_load }}"
                     fi
-                    if [ -n "{{ .plaid_mode }}" ]; then
-                      s3_path="$s3_path/{{ .plaid_mode }}"
+                    if [ -n "{{ $v.plaid_mode }}" ]; then
+                      s3_path="$s3_path/{{ $v.plaid_mode }}"
                     fi
-                    s3cmd put results_lazy_load.csv $s3_path/results_checkpoint_$i_vals.csv --config /root/s3cfg/.s3cfg
+                    s3cmd put results_lazy_load.csv $s3_path/results_checkpoint_${i}_vals.csv --config /root/s3cfg/.s3cfg
                   fi
                 done
               done
+
           env:
             - name: HF_TOKEN
               valueFrom:
@@ -116,4 +112,6 @@ spec:
                 operator: In
                 values:
                   - "A40"
+      restartPolicy: OnFailure
+---
 {{- end }}
