@@ -19,13 +19,14 @@ spec:
               cd vllm
               export MAX_JOBS=8
               pip install .
-              num_iterations=50
+              num_iterations=1000
               
               unique_id=$(date +%s)  # generate a unique identifier based on the current timestamp
               models="EleutherAI/pythia-1.4b mistralai/Mistral-7B-v0.1 meta-llama/Llama-2-13b-hf"
               download_dir=~/.cache/weights
               python_command="python vllm/entrypoints/openai/api_server.py --host 0.0.0.0 --load-format {{ $v.load_format }}"
               tensorizer_downloaded=false
+              download_non_local=true
               for model in $models; do
                 for i in $(seq 1 $num_iterations); do
                   echo "========================================================"
@@ -52,12 +53,14 @@ spec:
                   # If the model is Llama-2-13b-hf and at midpoint, download the tensorizer_uri and use as local
                   if [ $i -eq $((num_iterations/2 + 1)) ] && [ "{{ $v.load_format }}" = "tensorizer" ] && [ "$tensorizer_downloaded" = false ]; then
                     # Download the tensorizer_uri locally with s3
-                    s3cmd get $tensorizer_uri $download_dir/
+                    original_tensorizer_uri=$tensorizer_uri
+                    s3cmd get $tensorizer_uri $download_dir/ --config /root/s3cfg/.s3cfg
                     # Specify the local path as the new tensorizer_uri
                     tensorizer_uri="$download_dir/$(basename $tensorizer_uri)"
-                    python_command="${python_command/--tensorizer-uri s3:\/\/tensorized-ssteel\/Llama-2-13b-hf-vllm.tensors/--tensorizer-uri $tensorizer_uri}"
+                    python_command="${python_command/--tensorizer-uri $original_tensorizer_uri/--tensorizer-uri $tensorizer_uri}"
                     tensorizer_downloaded=true
                   fi
+                  echo "Running $python_command --model $model"
                   eval $python_command --model $model
                   # Remove caching for first half of iterations, which is the non-local one
                   if [ $i -le $((num_iterations/2)) ] && [ "{{ $v.load_format }}" != "tensorizer" ]; then
@@ -68,10 +71,11 @@ spec:
                     s3_path="s3://tensorized-ssteel/vllm-benchmarks/$unique_id/{{ $v.load_format }}/$model"
                     if [ $i -lt $((num_iterations/2 + 1)) ]; then
                       s3_path="$s3_path/non_local"
-                    else
+                    elif [ "$download_non_local" = true ]; then
                       echo "Writing fresh values for local loading data"
                       rm -rf results_lazy_load.csv
                       s3_path="$s3_path/local"
+                      download_non_local=false
                     fi
                     if [ -n "{{ $v.lazy_load }}" ]; then
                       s3_path="$s3_path/{{ $v.lazy_load }}"
