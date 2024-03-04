@@ -25,26 +25,31 @@ spec:
               models="EleutherAI/pythia-1.4b mistralai/Mistral-7B-v0.1 meta-llama/Llama-2-13b-hf"
               download_dir=~/.cache/weights
               python_command="python vllm/entrypoints/openai/api_server.py --host 0.0.0.0 --load-format {{ $v.load_format }}"
-              if [ "{{ $v.load_format }}" = "tensorizer" ]; then
-                python_command="$python_command {{ $v.lazy_load }}"
-                if [ "$model" = "meta-llama/Llama-2-13b-hf" ]; then
-                  if [ -n "{{ $v.plaid_mode }}" ]; then
-                    tensorizer_uri="s3://tensorized-ssteel/Llama-2-13b-hf-vllm.tensors"
-                    python_command="$python_command {{ $v.plaid_mode }}"
-                  else
-                    tensorizer_uri="s3://tensorized-ssteel/meta-llama/Llama-2-13b-hf/model.tensors"
-                  fi
-                fi
-                python_command="$python_command --tensorizer-uri $tensorizer_uri"
-              else
-                python_command="$python_command --download-dir $download_dir"
-              fi
               tensorizer_downloaded=false
               for model in $models; do
                 for i in $(seq 1 $num_iterations); do
                   echo "========================================================"
                   echo "Running iteration ${i} for model $model"
                   echo "========================================================"
+                  if [ "{{ $v.load_format }}" = "tensorizer" ]; then
+                    python_command="$python_command {{ $v.lazy_load }}"
+                    # If the model is Llama-2-13b-hf and we are in the first half of the iterations, use the non-local 
+                    if [ "$model" = "meta-llama/Llama-2-13b-hf" ] && [ $i -leq $((num_iterations/2 + 1)) ]; then
+                      if [ -n "{{ $v.plaid_mode }}" ]; then
+                        tensorizer_uri="s3://tensorized-ssteel/Llama-2-13b-hf-vllm.tensors"
+                        python_command="$python_command {{ $v.plaid_mode }}"
+                      else
+                        tensorizer_uri="s3://tensorized-ssteel/meta-llama/Llama-2-13b-hf/model.tensors"
+                      fi
+                    else
+                        tensorizer_uri="s3://tensorized/$model/fp16/model.tensors"
+                    fi
+                    python_command="$python_command --tensorizer-uri $tensorizer_uri"
+                  else
+                    # Use non-tensorizer loading, specifying cache-dir to delete later
+                    python_command="$python_command --download-dir $download_dir"
+                  fi
+                  # If the model is Llama-2-13b-hf and at midpoint, download the tensorizer_uri and use as local
                   if [ $i -eq $((num_iterations/2 + 1)) ] && [ "{{ $v.load_format }}" = "tensorizer" ] && [ "$tensorizer_downloaded" = false ]; then
                     # Download the tensorizer_uri locally with s3
                     s3cmd get $tensorizer_uri $download_dir/
@@ -54,7 +59,9 @@ spec:
                     tensorizer_downloaded=true
                   fi
                   eval $python_command --model $model
+                  # Remove caching for first half of iterations, which is the non-local one
                   if [ $i -le $((num_iterations/2)) ] && [ "{{ $v.load_format }}" != "tensorizer" ]; then
+                    echo "Removing the downloaded weights"
                     rm -rf $download_dir
                   fi
                   if [ $(($i % 10)) -eq 0 ]; then
@@ -62,6 +69,8 @@ spec:
                     if [ $i -lt $((num_iterations/2 + 1)) ]; then
                       s3_path="$s3_path/non_local"
                     else
+                      echo "Writing fresh values for local loading data"
+                      rm -rf results_lazy_load.csv
                       s3_path="$s3_path/local"
                     fi
                     if [ -n "{{ $v.lazy_load }}" ]; then
@@ -81,6 +90,16 @@ spec:
                 secretKeyRef:
                   name: hf-secret
                   key: token
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: "s3-access-key"
+                  key: "key"
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: "s3-secret-key"
+                  key: "key"
             - name: DEBIAN_FRONTEND
               value: noninteractive
           volumeMounts:
