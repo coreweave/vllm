@@ -72,6 +72,7 @@ class TensorizerArgs:
             "s3_access_key_id": self.s3_access_key_id,
             "s3_secret_access_key": self.s3_secret_access_key,
             "s3_endpoint": self.s3_endpoint,
+            "force_http": True
         }
         self.serializer_params = {
             # Placeholder for now
@@ -86,7 +87,6 @@ class TensorizerArgs:
             "plaid_mode_buffers": self.plaid_mode_buffers,
             "verify_hash": self.verify_hash,
             "encryption": self.deserializer_encryption_key,
-            "force_http":True
             # "dtype":self.dtype,
             # "device":self.device,
         }
