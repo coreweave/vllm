@@ -1,168 +1,3 @@
-#{{- range $v := .Values.deployments }}
-#---
-#apiVersion: batch/v1
-#kind: Job
-#metadata:
-#  name: {{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load}}
-#spec:
-#  template:
-#    spec:
-#      containers:
-#        - name: run-benchmark
-#          image: nvcr.io/nvidia/pytorch:23.10-py3
-#          command:
-#            - "/bin/sh"
-#            - "-c"
-#            - |
-#              apt-get update && apt-get install -y python3-pip git s3cmd
-#              cd / && git clone --branch sangstar/benchmarking https://github.com/coreweave/vllm.git
-#              cd vllm
-#              export MAX_JOBS=8
-#              pip install .
-#              num_iterations=300
-#
-#              unique_id=$(date +%s)  # generate a unique identifier based on the current timestamp
-#              models="meta-llama/Llama-2-13b-hf EleutherAI/pythia-1.4b mistralai/Mistral-7B-v0.1"
-#              download_dir=~/.cache/weights
-#
-#              ## Quick note: plaid_mode is automatically inferred by checking if the tensorizer_uri
-#              ## points to a vLLM model. I didn't realize this, and am now only using the $v.plaid_mode
-#              ## value to denote whether it's being used as a result of a vLLM model being deserialized.
-#
-#              # Non-local test
-#              for model in $models; do
-#                for i in $(seq 1 $num_iterations); do
-#                  echo "========================================================"
-#                  echo "Running iteration ${i} for model $model"
-#                  echo "========================================================"
-#                  python_command="python vllm/entrypoints/openai/api_server.py --host 0.0.0.0 --model $model --load-format {{ $v.load_format }}"
-#
-#                  if [ $model = "meta-llama/Llama-2-13b-hf" ]; then
-#                    if [ "{{ $v.load_format }}" = "tensorizer" ]; then
-#                      if [ -n "{{ $v.plaid_mode }}" ]; then
-#                        tensorizer_uri="s3://tensorized-ssteel/Llama-2-13b-hf-vllm.tensors"
-#                      else
-#                        tensorizer_uri="s3://tensorized-ssteel/meta-llama/Llama-2-13b-hf/model.tensors"
-#                      fi
-#                    fi
-#                  else
-#                    # For other two models that are on the tensorized bucket
-#                    tensorizer_uri="s3://tensorized/$model/fp16/model.tensors"
-#                  fi
-#
-#                  # Populate the other args based on tensorizer loading or otherwise
-#                  if [ {{ $v.load_format }} = "tensorizer" ]; then
-#                    python_command="$python_command --tensorizer-uri $tensorizer_uri"
-#                    python_command="$python_command {{ $v.lazy_load }}"
-#                  else
-#                    python_command="$python_command --download-dir $download_dir"
-#                  fi
-#
-#                  echo "Running $python_command"
-#                  eval $python_command
-#                  s3_path="s3://tensorized-ssteel/vllm-benchmarks/$unique_id/{{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load }}/$model/non-local"
-#
-#                  # Remove weight caching for npcache and safetensors
-#                  rm -rf $download_dir
-#
-#                  if [ $(($i % 10)) -eq 0 ]; then
-#                    s3cmd put results_lazy_load.csv $s3_path/results_checkpoint_${i}_vals.csv --config /root/s3cfg/.s3cfg
-#                  fi
-#                done
-#              done
-#
-#              # Local test
-#              ## Similar to before, but not removing the weights and saving tensors locally with tensorizer
-#              for model in $models; do
-#                for i in $(seq 1 $num_iterations); do
-#                  echo "========================================================"
-#                  echo "Running iteration ${i} for model $model"
-#                  echo "========================================================"
-#                  python_command="python vllm/entrypoints/openai/api_server.py --host 0.0.0.0 --model $model --load-format {{ $v.load_format }}"
-#
-#                  if [ $model = "meta-llama/Llama-2-13b-hf" ]; then
-#                    if [ "{{ $v.load_format }}" = "tensorizer" ]; then
-#                      if [ -n "{{ $v.plaid_mode }}" ]; then
-#                        tensorizer_uri="s3://tensorized-ssteel/Llama-2-13b-hf-vllm.tensors"
-#                      else
-#                        tensorizer_uri="s3://tensorized-ssteel/meta-llama/Llama-2-13b-hf/model.tensors"
-#                      fi
-#                    fi
-#                  else
-#                    # For other two models that are on the tensorized bucket
-#                    tensorizer_uri="s3://tensorized/$model/fp16/model.tensors"
-#                  fi
-#
-#                  # Populate the other args based on tensorizer loading or otherwise
-#                  if [ {{ $v.load_format }} = "tensorizer" ]; then
-#                    s3cmd get --skip-existing $tensorizer_uri $download_dir/$(basename $tensorizer_uri) --config /root/s3cfg/.s3cfg
-#                    python_command="$python_command --tensorizer-uri $download_dir/$(basename $tensorizer_uri)"
-#                    python_command="$python_command {{ $v.lazy_load }}"
-#                  else
-#                    python_command="$python_command --download-dir $download_dir"
-#                  fi
-#
-#                  echo "Running $python_command"
-#                  eval $python_command
-#                  s3_path="s3://tensorized-ssteel/vllm-benchmarks/$unique_id/{{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load }}/$model/local"
-#
-#                  if [ $(($i % 10)) -eq 0 ]; then
-#                    s3cmd put results_lazy_load.csv $s3_path/results_checkpoint_${i}_vals.csv --config /root/s3cfg/.s3cfg
-#                  fi
-#                done
-#              done
-#
-#          env:
-#            - name: HF_TOKEN
-#              valueFrom:
-#                secretKeyRef:
-#                  name: hf-secret
-#                  key: token
-#            - name: S3_ACCESS_KEY_ID
-#              valueFrom:
-#                secretKeyRef:
-#                  name: "s3-access-key"
-#                  key: "key"
-#            - name: S3_SECRET_ACCESS_KEY
-#              valueFrom:
-#                secretKeyRef:
-#                  name: "s3-secret-key"
-#                  key: "key"
-#            - name: DEBIAN_FRONTEND
-#              value: noninteractive
-#          volumeMounts:
-#            - name: s3cfg
-#              mountPath: /root/s3cfg
-#          resources:
-#            requests:
-#              cpu: "32"
-#              memory: 128Gi
-#              nvidia.com/gpu: "1"
-#            limits:
-#              cpu: "32"
-#              memory: 128Gi
-#              nvidia.com/gpu: "1"
-#      volumes:
-#        - name: s3cfg
-#          secret:
-#            secretName: s3cfg-raw
-#      affinity:
-#        nodeAffinity:
-#          requiredDuringSchedulingIgnoredDuringExecution:
-#            nodeSelectorTerms:
-#            - matchExpressions:
-#              - key: topology.kubernetes.io/region
-#                operator: In
-#                values:
-#                  - "LAS1"
-#              - key: gpu.nvidia.com/class
-#                operator: In
-#                values:
-#                  - "A40"
-#      restartPolicy: OnFailure
-#---
-#{{- end }}
-
 {{- range $v := .Values.deployments }}
 ---
 apiVersion: batch/v1
@@ -174,67 +9,64 @@ spec:
     spec:
       containers:
         - name: run-benchmark
-          image: nvcr.io/nvidia/pytorch:23.10-py3
+          image: ghcr.io/coreweave/ml-containers/torch-extras:es-22.04-58a49a2-nccl-cuda12.1.1-nccl2.18.3-1-torch2.1.2-vision0.16.2-audio2.1.2-flash_attn2.4.2
           command:
             - "/bin/sh"
             - "-c"
             - |
-              apt-get update && apt-get install -y python3-pip git s3cmd
-              cd / && git clone --branch sangstar/benchmarking https://github.com/coreweave/vllm.git 
+              ## Install same compiler used to build torch in the base image
+              # Update compiler (GCC) and linker (LLD) versions
+              apt-get update && apt-get install -y s3cmd lighttpd
+              
+              CODENAME="$(lsb_release -cs)" && \
+                  wget -qO - 'https://apt.llvm.org/llvm-snapshot.gpg.key' > /etc/apt/trusted.gpg.d/apt.llvm.org.asc && \
+                  apt-add-repository "deb https://apt.llvm.org/$CODENAME/ llvm-toolchain-$CODENAME-17 main" && \
+                  apt-add-repository -y ppa:ubuntu-toolchain-r/test && \
+                  apt-get -qq update && apt-get -qq install --no-install-recommends -y \
+                    gcc-11 g++-11 lld-17 && \
+                  apt-get clean && \
+                  update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 11 && \
+                  update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-11 11 && \
+                  update-alternatives --install /usr/bin/ld ld /usr/bin/ld.lld-17 1
+              
+              cd / && git clone --branch sangstar/benchmarking https://github.com/coreweave/vllm.git
               cd vllm
               export MAX_JOBS=8
-              pip install .
-              num_iterations=300
+
+              ## Write a constraints.txt file to prevent reinstallation of deps
+              echo "torch==2.1.2" > constraints.txt
+              echo "torchvision==0.16.2" >> constraints.txt
+              echo "torchaudio==2.1.2" >> constraints.txt
+              echo "flash-attn==2.4.2" >> constraints.txt
+              echo "xformers==0.0.23.post1" >> constraints.txt
+              
+              pip install -r requirements-build.txt -c constraints.txt
+              python3 setup.py build_ext --inplace
+              
+              pip install -r requirements.txt -c constraints.txt
+              
+              ## Download model tensors locally to serve on lighttpd
+              cd /
+              mkdir tensorized
+              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/meta-llama/Llama-2-13b-hf/model.tensors tensorized/meta-llama/Llama-2-13b-hf/model.tensors
+              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/Llama-2-13b-hf-vllm.tensors tensorized/meta-llama/Llama-2-13b-hf-vllm/model.tensors
+              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized/EleutherAI/pythia-1.4b/fp16/model.tensors tensorized/EleutherAI/pythia-1.4b/model.tensors
+              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized/mistralai/Mistral-7B-v0.1/fp16/model.tensors tensorized/mistralai/Mistral-7B-v0.1/model.tensors
+              
+              ## Start lighttpd server to serve model tensors
+              echo "server.document-root = \"/tensorized\"" > /etc/lighttpd/lighttpd.conf
+              lighttpd -D -f /etc/lighttpd/lighttpd.conf &
+              
+              cd vllm
+              num_iterations=500
               
               unique_id=$(date +%s)  # generate a unique identifier based on the current timestamp
-              models="EleutherAI/pythia-1.4b mistralai/Mistral-7B-v0.1"
+              models="EleutherAI/pythia-1.4b mistralai/Mistral-7B-v0.1 meta-llama/Llama-2-13b-hf"
               download_dir=~/.cache/weights
               
               ## Quick note: plaid_mode is automatically inferred by checking if the tensorizer_uri
               ## points to a vLLM model. I didn't realize this, and am now only using the $v.plaid_mode
               ## value to denote whether it's being used as a result of a vLLM model being deserialized.
-              
-              # Non-local test
-              for model in $models; do
-                for i in $(seq 1 $num_iterations); do
-                  echo "========================================================"
-                  echo "Running iteration ${i} for model $model"
-                  echo "========================================================"
-                  python_command="python vllm/entrypoints/openai/api_server.py --host 0.0.0.0 --model $model --load-format {{ $v.load_format }}"
-              
-                  if [ $model = "meta-llama/Llama-2-13b-hf" ]; then
-                    if [ "{{ $v.load_format }}" = "tensorizer" ]; then
-                      if [ -n "{{ $v.plaid_mode }}" ]; then
-                        tensorizer_uri="http://tensorized.10.163.8.17:7480-ssteel/Llama-2-13b-hf-vllm.tensors"
-                      else
-                        tensorizer_uri="http://tensorized.10.163.8.17:7480-ssteel/meta-llama/Llama-2-13b-hf/model.tensors"
-                      fi
-                    fi
-                  else
-                    # For other two models that are on the tensorized bucket
-                    tensorizer_uri="http://tensorized.10.163.8.17:7480/$model/fp16/model.tensors"
-                  fi
-              
-                  # Populate the other args based on tensorizer loading or otherwise
-                  if [ {{ $v.load_format }} = "tensorizer" ]; then
-                    python_command="$python_command --tensorizer-uri $tensorizer_uri"
-                    python_command="$python_command {{ $v.lazy_load }}"
-                  else
-                    python_command="$python_command --download-dir $download_dir"
-                  fi
-              
-                  echo "Running $python_command"
-                  eval $python_command
-                  s3_path="s3://tensorized-ssteel/vllm-benchmarks/$unique_id/{{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load }}/$model/non-local"
-              
-                  # Remove weight caching for npcache and safetensors
-                  rm -rf $download_dir
-              
-                  if [ $(($i % 10)) -eq 0 ]; then
-                    s3cmd put results_lazy_load.csv $s3_path/results_checkpoint_${i}_vals.csv --config /root/s3cfg/.s3cfg
-                  fi
-                done
-              done
               
               # Local test
               ## Similar to before, but not removing the weights and saving tensors locally with tensorizer
@@ -243,33 +75,55 @@ spec:
                   echo "========================================================"
                   echo "Running iteration ${i} for model $model"
                   echo "========================================================"
-                  python_command="python vllm/entrypoints/openai/api_server.py --host 0.0.0.0 --model $model --load-format {{ $v.load_format }}"
-              
-                  if [ $model = "meta-llama/Llama-2-13b-hf" ]; then
-                    if [ "{{ $v.load_format }}" = "tensorizer" ]; then
-                      if [ -n "{{ $v.plaid_mode }}" ]; then
-                        tensorizer_uri="http://tensorized.10.163.8.17:7480-ssteel/Llama-2-13b-hf-vllm.tensors"
-                      else
-                        tensorizer_uri="http://tensorized.10.163.8.17:7480-ssteel/meta-llama/Llama-2-13b-hf/model.tensors"
-                      fi
-                    fi
-                  else
-                    # For other two models that are on the tensorized bucket
-                    tensorizer_uri="http://tensorized.10.163.8.17:7480/$model/fp16/model.tensors"
-                  fi
+                  python_command="python -m vllm.entrypoints.openai.api_server --host 0.0.0.0 --model $model --load-format {{ $v.load_format }}"
               
                   # Populate the other args based on tensorizer loading or otherwise
-                  if [ {{ $v.load_format }} = "tensorizer" ]; then
-                    s3cmd get --skip-existing $tensorizer_uri $download_dir/$(basename $tensorizer_uri) --config /root/s3cfg/.s3cfg
-                    python_command="$python_command --tensorizer-uri $download_dir/$(basename $tensorizer_uri)"
-                    python_command="$python_command {{ $v.lazy_load }}"
+                  if [ $model = "meta-llama/Llama-2-13b-hf" ]; then
+                    if [ -n "{{ $v.plaid_mode }}" ]; then
+                      python_command="$python_command --tensorizer-uri /tensorized/meta-llama/Llama-2-13b-hf-vllm/model.tensors"
+                    else
+                      python_command="$python_command --tensorizer-uri /tensorized/meta-llama/Llama-2-13b-hf/model.tensors"
+                    fi
                   else
-                    python_command="$python_command --download-dir $download_dir"
+                      python_command="$python_command --tensorizer-uri /tensorized/$model/model.tensors"
                   fi
+              
+                  python_command="$python_command {{ $v.lazy_load }}"
               
                   echo "Running $python_command"
                   eval $python_command
-                  s3_path="s3://tensorized-ssteel/vllm-benchmarks/$unique_id/{{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load }}/$model/local"
+                  s3_path="s3://tensorized-ssteel/vllm-benchmarks-results-optimized/$unique_id/{{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load }}/$model/local"
+              
+                  if [ $(($i % 10)) -eq 0 ]; then
+                    s3cmd put results_lazy_load.csv $s3_path/results_checkpoint_${i}_vals.csv --config /root/s3cfg/.s3cfg
+                  fi
+                done
+              done
+              
+              # Non-local test
+              for model in $models; do
+                for i in $(seq 1 $num_iterations); do
+                  echo "========================================================"
+                  echo "Running iteration ${i} for model $model"
+                  echo "========================================================"
+                  python_command="python -m vllm.entrypoints.openai.api_server --host 0.0.0.0 --model $model --load-format {{ $v.load_format }}"
+              
+                  # Populate the other args based on tensorizer loading or otherwise
+                  if [ $model = "meta-llama/Llama-2-13b-hf" ]; then
+                    if [ -n "{{ $v.plaid_mode }}" ]; then
+                      python_command="$python_command --tensorizer-uri http://localhost:80/meta-llama/Llama-2-13b-hf-vllm/model.tensors"
+                    else
+                      python_command="$python_command --tensorizer-uri http://localhost:80/meta-llama/Llama-2-13b-hf/model.tensors"
+                    fi
+                  else
+                      python_command="$python_command --tensorizer-uri http://localhost:80/$model/model.tensors"
+                  fi
+              
+                  python_command="$python_command {{ $v.lazy_load }}"
+              
+                  echo "Running $python_command"
+                  eval $python_command
+                  s3_path="s3://tensorized-ssteel/vllm-benchmarks-results-optimized/$unique_id/{{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load }}/$model/non-local"
               
                   if [ $(($i % 10)) -eq 0 ]; then
                     s3cmd put results_lazy_load.csv $s3_path/results_checkpoint_${i}_vals.csv --config /root/s3cfg/.s3cfg
@@ -301,11 +155,11 @@ spec:
           resources:
             requests:
               cpu: "32"
-              memory: 128Gi
+              memory: 228Gi
               nvidia.com/gpu: "1"
             limits:
               cpu: "32"
-              memory: 128Gi
+              memory: 228Gi
               nvidia.com/gpu: "1"
       volumes:
         - name: s3cfg

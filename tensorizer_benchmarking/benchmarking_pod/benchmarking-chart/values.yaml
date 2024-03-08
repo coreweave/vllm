@@ -1,27 +1,19 @@
 deployments:
 ## Tensorizer with lazy load
-- load_format: "tensorizer"
+- load_format: tensorizer
   plaid_mode: ""
-  lazy_load: "--lazy-load"
+  lazy_load: --lazy-load
 ## Tensorizer with no lazy load
-- load_format: "tensorizer"
+- load_format: tensorizer
   plaid_mode: ""
   lazy_load: ""
 ## Tensorizer with lazy load and vllm-formatted model and plaid mode
 ## For plaid-mode, this only applies for Llama 2 13b.
 ## The other two models are Tensorizer CPU
-- load_format: "tensorizer"
-  plaid_mode: "--plaid-mode"
-  lazy_load: "--lazy-load"
+- load_format: tensorizer
+  plaid_mode: --plaid-mode
+  lazy_load: --lazy-load
 ## Tensorizer with no lazy load and vllm-formatted model and plaid mode
-- load_format: "tensorizer"
-  plaid_mode: "--plaid-mode"
-  lazy_load: ""
-## Safetensors
-- load_format: "safetensors"
-  plaid_mode: ""
-  lazy_load: ""
-## Npcache
-- load_format: "npcache"
-  plaid_mode: ""
+- load_format: tensorizer
+  plaid_mode: --plaid-mode
   lazy_load: ""
