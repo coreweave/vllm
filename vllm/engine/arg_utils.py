@@ -8,6 +8,7 @@ from vllm.config import (CacheConfig, DeviceConfig, LoRAConfig, ModelConfig,
 
 from vllm.model_executor.tensorizer_loader import TensorizerArgs
 
+
 @dataclass
 class EngineArgs:
     """Arguments for vLLM engine."""
