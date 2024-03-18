@@ -52,6 +52,7 @@ class EngineArgs:
     max_cpu_loras: Optional[int] = None
     device: str = 'auto'
     ray_workers_use_nsight: bool = False
+    tensorizer_args: Optional[TensorizerArgs] = None
     scheduler_delay_factor: float = 0.0
 
     def __post_init__(self):
@@ -323,7 +324,8 @@ class EngineArgs:
     @classmethod
     def from_cli_args(cls, args: argparse.Namespace) -> 'EngineArgs':
         # Get the list of attributes of this dataclass.
-        attrs = [attr.name for attr in dataclasses.fields(cls)]
+        attrs = [attr.name for attr in dataclasses.fields(cls) if
+                 attr.name != "tensorizer_args"]
         # Set the attributes from the parsed arguments.
         engine_args = cls(**{attr: getattr(args, attr) for attr in attrs})
 
