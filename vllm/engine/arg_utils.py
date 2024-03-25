@@ -5,7 +5,6 @@ from typing import Optional, Tuple
 
 from vllm.config import (CacheConfig, DeviceConfig, LoRAConfig, ModelConfig,
                          ParallelConfig, SchedulerConfig, TokenizerPoolConfig)
-
 from vllm.model_executor.tensorizer_loader import TensorizerArgs
 
 
