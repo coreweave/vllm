@@ -287,6 +287,8 @@ def hf_model_weights_iterator(
         stream = open_stream(tensorizer_args.tensorizer_uri, **stream_params)
         with TensorDeserializer(stream, **deserializer_args,
                                 device="cpu") as state:
+            cache_status = state.cache_status
+            print(cache_status)
             for name, param in state.items():
                 yield name, param
         del state
