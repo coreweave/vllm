@@ -1,5 +1,4 @@
 deployments:
-## Tensorizer with no lazy load
 - load_format: tensorizer
   plaid_mode: ""
   lazy_load: ""

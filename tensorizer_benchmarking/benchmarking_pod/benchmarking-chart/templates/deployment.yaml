@@ -1,9 +1,9 @@
-{{- range $v := .Values.deployments }}
+{{- range $i, $v := .Values.deployments }}
 ---
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load}}
+  name: {{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load}}-{{ $i }}
 spec:
   template:
     spec:
@@ -48,11 +48,10 @@ spec:
               ## Download model tensors locally to serve on lighttpd
               cd /
               mkdir tensorized
-              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/meta-llama/Llama-2-13b-hf/model.tensors tensorized/meta-llama/Llama-2-13b-hf/model.tensors
+              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/EleutherAI/pythia-1.4b-vllm.tensors tensorized/EleutherAI/pythia-1.4b-vllm.tensors
+              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/mistralai/Mistral-7B-v0.1-vllm.tensors tensorized/mistralai/Mistral-7B-v0.1-vllm.tensors
               s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/Llama-2-13b-hf-vllm.tensors tensorized/meta-llama/Llama-2-13b-hf-vllm/model.tensors
-              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized/EleutherAI/pythia-1.4b/fp16/model.tensors tensorized/EleutherAI/pythia-1.4b/model.tensors
-              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized/mistralai/Mistral-7B-v0.1/fp16/model.tensors tensorized/mistralai/Mistral-7B-v0.1/model.tensors
-              
+
               ## Start lighttpd server to serve model tensors
               echo "server.document-root = \"/tensorized\"" > /etc/lighttpd/lighttpd.conf
               lighttpd -D -f /etc/lighttpd/lighttpd.conf &
@@ -76,23 +75,11 @@ spec:
                   echo "Running iteration ${i} for model $model"
                   echo "========================================================"
                   python_command="python -m vllm.entrypoints.openai.api_server --host 0.0.0.0 --model $model --load-format {{ $v.load_format }}"
-              
-                  # Populate the other args based on tensorizer loading or otherwise
-                  if [ $model = "meta-llama/Llama-2-13b-hf" ]; then
-                    if [ -n "{{ $v.plaid_mode }}" ]; then
-                      python_command="$python_command --tensorizer-uri /tensorized/meta-llama/Llama-2-13b-hf-vllm/model.tensors"
-                    else
-                      python_command="$python_command --tensorizer-uri /tensorized/meta-llama/Llama-2-13b-hf/model.tensors"
-                    fi
-                  else
-                      python_command="$python_command --tensorizer-uri /tensorized/$model/model.tensors"
-                  fi
-              
-                  python_command="$python_command {{ $v.lazy_load }}"
+                  python_command="$python_command --tensorizer-uri /tensorized/$model-vllm.tensors"
               
                   echo "Running $python_command"
                   eval $python_command
-                  s3_path="s3://tensorized-ssteel/vllm-benchmarks-results-optimized/$unique_id/{{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load }}/$model/local"
+                  s3_path="s3://tensorized-ssteel/vllm-benchmarks-results-optimized-new-tensorizer/$unique_id/{{ $v.load_format }}{{ $i }}/$model/local"
               
                   if [ $(($i % 10)) -eq 0 ]; then
                     s3cmd put results_lazy_load.csv $s3_path/results_checkpoint_${i}_vals.csv --config /root/s3cfg/.s3cfg
@@ -107,23 +94,11 @@ spec:
                   echo "Running iteration ${i} for model $model"
                   echo "========================================================"
                   python_command="python -m vllm.entrypoints.openai.api_server --host 0.0.0.0 --model $model --load-format {{ $v.load_format }}"
-              
-                  # Populate the other args based on tensorizer loading or otherwise
-                  if [ $model = "meta-llama/Llama-2-13b-hf" ]; then
-                    if [ -n "{{ $v.plaid_mode }}" ]; then
-                      python_command="$python_command --tensorizer-uri http://localhost:80/meta-llama/Llama-2-13b-hf-vllm/model.tensors"
-                    else
-                      python_command="$python_command --tensorizer-uri http://localhost:80/meta-llama/Llama-2-13b-hf/model.tensors"
-                    fi
-                  else
-                      python_command="$python_command --tensorizer-uri http://localhost:80/$model/model.tensors"
-                  fi
-              
-                  python_command="$python_command {{ $v.lazy_load }}"
+                  python_command="$python_command --tensorizer-uri http://localhost:80/$model-vllm.tensors"
               
                   echo "Running $python_command"
                   eval $python_command
-                  s3_path="s3://tensorized-ssteel/vllm-benchmarks-results-optimized/$unique_id/{{ $v.load_format }}{{ $v.plaid_mode }}{{ $v.lazy_load }}/$model/non-local"
+                  s3_path="s3://tensorized-ssteel/vllm-benchmarks-results-optimized-new-tensorizer/$unique_id/{{ $v.load_format }}{{ $i }}/$model/non-local"
               
                   if [ $(($i % 10)) -eq 0 ]; then
                     s3cmd put results_lazy_load.csv $s3_path/results_checkpoint_${i}_vals.csv --config /root/s3cfg/.s3cfg
