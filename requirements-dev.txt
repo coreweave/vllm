@@ -1,7 +1,10 @@
 # formatting
 yapf==0.32.0
 toml==0.10.2
+tomli==2.0.1
 ruff==0.1.5
+codespell==2.2.6
+isort==5.13.2
 
 # type checking
 mypy==0.991
@@ -11,11 +14,17 @@ types-setuptools
 
 # testing
 pytest
+git+https://github.com/coreweave/tensorizer@v2.8.1-no-init-cuda ## This can be removed for tensorizer > 2.8.1
 pytest-forked
 pytest-asyncio
+pytest-rerunfailures
+pytest-shard
 httpx
 einops # required for MPT
-flash_attn # required for HuggingFace's llama implementation
 openai
 requests
 ray
+peft
+
+# Benchmarking
+aiohttp

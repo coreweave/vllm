@@ -1,30 +1,38 @@
 """Utilities for downloading and initializing model weights."""
-import filelock
-import glob
 import fnmatch
+import glob
+import hashlib
 import json
 import os
+import warnings
 from collections import defaultdict
 from typing import Any, Iterator, List, Optional, Tuple, Union
 
-
-from huggingface_hub import snapshot_download, HfFileSystem
+import filelock
 import numpy as np
 import torch
-from huggingface_hub import snapshot_download
-from safetensors.torch import load_file, save_file, safe_open
-from tqdm.auto import tqdm
+from huggingface_hub import HfFileSystem, snapshot_download
+from safetensors.torch import load_file, safe_open, save_file
 from tensorizer.serialization import TensorDeserializer
 from tensorizer.stream_io import open_stream
+from tqdm.auto import tqdm
 
 from vllm.config import ModelConfig
 from vllm.logger import init_logger
-from vllm.model_executor.layers.quantization import (get_quantization_config,
-                                                     QuantizationConfig)
+from vllm.model_executor.layers.quantization import (QuantizationConfig,
+                                                     get_quantization_config)
+from vllm.model_executor.tensorizer_loader import PerformanceWarning
 
 logger = init_logger(__name__)
 
 cache_status = None
+# use system-level temp directory for file locks, so that multiple users
+# can share the same lock without error.
+# lock files in the temp directory will be automatically deleted when the
+# system reboots, so users will not complain about annoying lock files
+temp_dir = os.environ.get('TMPDIR') or os.environ.get(
+    'TEMP') or os.environ.get('TMP') or "/tmp/"
+
 
 class Disabledtqdm(tqdm):
 
@@ -33,9 +41,15 @@ class Disabledtqdm(tqdm):
 
 
 def get_lock(model_name_or_path: str, cache_dir: Optional[str] = None):
-    lock_dir = cache_dir if cache_dir is not None else "/tmp"
-    lock_file_name = model_name_or_path.replace("/", "-") + ".lock"
-    lock = filelock.FileLock(os.path.join(lock_dir, lock_file_name))
+    lock_dir = cache_dir or temp_dir
+    os.makedirs(os.path.dirname(lock_dir), exist_ok=True)
+    model_name = model_name_or_path.replace("/", "-")
+    hash_name = hashlib.sha256(model_name.encode()).hexdigest()
+    # add hash to avoid conflict with old users' lock files
+    lock_file_name = hash_name + model_name + ".lock"
+    # mode 0o666 is required for the filelock to be shared across users
+    lock = filelock.FileLock(os.path.join(lock_dir, lock_file_name),
+                             mode=0o666)
     return lock
 
 
@@ -135,8 +149,8 @@ def prepare_hf_model_weights(
     revision: Optional[str] = None,
 ) -> Tuple[str, List[str], bool]:
     # Download model weights from huggingface.
-    is_local = os.path.isdir(
-        model_name_or_path) and load_format != "tensorizer"
+    is_local = os.path.isdir(model_name_or_path) \
+               and load_format != "tensorizer"
     use_safetensors = False
     # Some quantized models use .pt files for storing the weights.
     if load_format == "auto":
@@ -214,16 +228,11 @@ def prepare_hf_model_weights(
 def hf_model_weights_iterator(
     model_name_or_path: str,
     cache_dir: Optional[str] = None,
-    dynamic_load_format: Union[Tuple, str] = "auto",
+    load_format: Union[Tuple, str] = "auto",
     revision: Optional[str] = None,
     fall_back_to_pt: Optional[bool] = True,
 ) -> Iterator[Tuple[str, torch.Tensor]]:
     global cache_status
-    if isinstance(dynamic_load_format, tuple):
-        load_format, tensorizer_args = dynamic_load_format
-    else:
-        load_format = dynamic_load_format
-        tensorizer_args = None
     hf_folder, hf_weights_files, use_safetensors = prepare_hf_model_weights(
         model_name_or_path,
         cache_dir=cache_dir,
@@ -264,16 +273,20 @@ def hf_model_weights_iterator(
                 param = np.load(f)
             yield name, torch.from_numpy(param)
     elif load_format == "tensorizer":
-        if cache_dir:
-            logger.warning(
-                "It is not recommended to download deserialized tensors locally. "
-                "Consider keeping `download_dir` as None next time.")
+        tensorizer_args = load_format.params
+        warnings.warn(
+            "Deserializing HuggingFace models is not optimized for "
+            "loading on vLLM, as tensorizer is forced to load to CPU. "
+            "Consider deserializing a vLLM model instead for faster "
+            "load times. See the examples/tensorize_vllm_model.py example "
+            "script for serializing vLLM models.",
+            category=PerformanceWarning,
+            stacklevel=2)
         deserializer_args = tensorizer_args.deserializer_params
-        credentials = tensorizer_args.credentials
-        stream = open_stream(tensorizer_args.tensorizer_uri, **credentials)
-        with TensorDeserializer(stream, **deserializer_args, device="cpu") as state:
-            cache_status = state.cache_status
-            print(cache_status)
+        stream_params = tensorizer_args.stream_params
+        stream = open_stream(tensorizer_args.tensorizer_uri, **stream_params)
+        with TensorDeserializer(stream, **deserializer_args,
+                                device="cpu") as state:
             for name, param in state.items():
                 yield name, param
         del state

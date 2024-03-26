@@ -1,32 +1,28 @@
-import contextlib
-import contextvars
+import argparse
 import dataclasses
-import functools
-import threading
-import time
-import typing
-from typing import Optional
-from typing import Type, Union, Any, Callable
 import io
 import os
-import argparse
-
-
-import torch
+import time
+import typing
+import warnings
 from dataclasses import dataclass
-from tensorizer import TensorDeserializer, stream_io
+from typing import Optional, Type, Union
+
+from tensorizer import DecryptionParams, TensorDeserializer, stream_io
 from tensorizer.utils import convert_bytes, get_mem_usage, no_init_or_tensor
 from torch import nn
 
 from vllm.config import ModelConfig
 from vllm.logger import init_logger
-from vllm.model_executor.layers.linear import MergedColumnParallelLinear, QKVParallelLinear
 
 logger = init_logger(__name__)
 
-def load_with_tensorizer(model_cls: Type[nn.Module], model_config: ModelConfig) -> nn.Module:
+
+def load_with_tensorizer(model_cls: Type[nn.Module],
+                         model_config: ModelConfig) -> nn.Module:
     tensorizer = TensorizerAgent(model_cls, model_config)
     return tensorizer.deserialize()
+
 
 def _is_vllm_model(model_config: ModelConfig = None,
                    file_uri: Optional[str] = None) -> bool:
@@ -35,106 +31,132 @@ def _is_vllm_model(model_config: ModelConfig = None,
     else:
         return "vllm" in model_config.tensorizer_args.tensorizer_uri
 
-def _make_model_contiguous(model: nn.Module):
-    # Ensure tensors are saved in memory contiguously
-    for param in model.parameters():
-        param.data = param.data.contiguous()
+
+class ParameterizedLoadFormat(str):
+    __slots__ = "params"
+
+
+class PerformanceWarning(UserWarning):
+
+    def __str__(self):
+        return (f"{super().__str__()}"
+                " (set the VLLM_SILENCE_PERFORMANCE_WARNINGS"
+                " environment variable to hide this)")
+
+
+if (os.getenv("VLLM_SILENCE_PERFORMANCE_WARNINGS", "").lower()
+        not in ("", "0", "n", "no", "off", "disable")):
+    warnings.simplefilter("ignore", category=PerformanceWarning)
 
 
 @dataclass
 class TensorizerArgs:
-    tensorizer_uri: Union[
-        io.BufferedIOBase,
-        io.RawIOBase,
-        typing.BinaryIO,
-        str,
-        bytes,
-        os.PathLike,
-        int,
-    ]
-    device: Optional[Union[torch.device, str]] = None
-    dtype: Optional[torch.dtype] = None
-    ## Commenting out serializer_encryption until I work out how I want to implement it
-    # serializer_encryption: Optional[bool] = False
-    lazy_load: bool = False
-    plaid_mode_buffers: Optional[int] = None
+    tensorizer_uri: Union[io.BufferedIOBase, io.RawIOBase, typing.BinaryIO,
+                          str, bytes, os.PathLike, int]
     verify_hash: bool = False
-    filter_func: Optional[Callable[[str], Union[bool, Any]]] = None
-    deserializer_encryption_key: Optional[str] = None
+    encryption_keyfile: Optional[str] = None
+    s3_access_key_id: Optional[str] = None
+    s3_secret_access_key: Optional[str] = None
+    s3_endpoint: Optional[str] = None
+    """
+  Args for the TensorizerAgent class. These are used to configure the behavior 
+  of the TensorDeserializer when loading tensors from a serialized model.
+  
+  Args:
+      tensorizer_uri: Path to serialized model tensors. Can be a local file 
+          path or a S3 URI.
+      verify_hash: If True, the hashes of each tensor will be verified against 
+          the hashes stored in the metadata. A `HashMismatchError` will be 
+          raised if any of the hashes do not match.
+      encryption_keyfile: File path to a binary file containing a  
+          binary key to use for decryption. `None` (the default) means 
+          no decryption. See the example script in 
+          examples/tensorize_vllm_model.py. 
+      s3_access_key_id: The access key for the S3 bucket. Can also be set via
+          the S3_ACCESS_KEY_ID environment variable.
+      s3_secret_access_key: The secret access key for the S3 bucket. Can also
+          be set via the S3_SECRET_ACCESS_KEY environment variable.
+      s3_endpoint: The endpoint for the S3 bucket. Can also be set via the
+          S3_ENDPOINT_URL environment variable.
+        
+  """
 
     def __post_init__(self):
         self.file_obj = self.tensorizer_uri
-        self.s3_access_key_id = os.environ.get("S3_ACCESS_KEY_ID") or None
-        self.s3_secret_access_key = os.environ.get("S3_SECRET_ACCESS_KEY") or None
-        self.s3_endpoint = os.environ.get("S3_ENDPOINT_URL") or None
-
-        self.credentials = {
+        self.s3_access_key_id = (self.s3_access_key_id
+                                 or os.environ.get("S3_ACCESS_KEY_ID")) or None
+        self.s3_secret_access_key = (
+            self.s3_secret_access_key
+            or os.environ.get("S3_SECRET_ACCESS_KEY")) or None
+        self.s3_endpoint = (self.s3_endpoint
+                            or os.environ.get("S3_ENDPOINT_URL")) or None
+        self.stream_params = {
             "s3_access_key_id": self.s3_access_key_id,
             "s3_secret_access_key": self.s3_secret_access_key,
             "s3_endpoint": self.s3_endpoint,
-            "force_http": True
         }
-        self.serializer_params = {
-            # Placeholder for now
-        }
-
 
         # Omitting self.dtype and self.device as this behaves weirdly
         self.deserializer_params = {
-            "filter_func": self.filter_func,
-            "lazy_load": self.lazy_load,
-            "plaid_mode": True if _is_vllm_model(file_uri=self.file_obj) else False,
-            "plaid_mode_buffers": self.plaid_mode_buffers,
             "verify_hash": self.verify_hash,
-            "encryption": self.deserializer_encryption_key,
-            # "dtype":self.dtype,
-            # "device":self.device,
+            "encryption": self.encryption_keyfile,
         }
-        print(self.deserializer_params)
+        if self.encryption_keyfile:
+            with stream_io.open_stream(
+                    self.encryption_keyfile,
+                    **self.stream_params,
+            ) as stream:
+                key = stream.read()
+                decryption_params = DecryptionParams.from_key(key)
+                self.deserializer_params['encryption'] = decryption_params
 
-    @staticmethod
-    def add_cli_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    def add_cli_args(
+            parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
         """Tensorizer CLI arguments"""
-        # TODO: Add support for encryption -- CLI args can be base64 encoded
-        #       key/password for --serializer-encryption. Need to revist
-        parser.add_argument(
-            "--serializer-encryption",
-            action="store_true",
-            help="An `EncryptionParams` object holding a password or key"
-            "to use for encryption. If None, no encryption will be used.",
-        )
-        parser.add_argument(
-            "--lazy-load",
-            action="store_true",
-            help="If True, tensors will be loaded and cached when keys are"
-            "accessed. If False, all tensors will be loaded into memory up"
-            "front.",
-        )
-        parser.add_argument(
+
+        # Create the argument group
+        group = parser.add_argument_group(
+            'tensorizer options',
+            description=('Options for configuring the behavior of the'
+                         ' tensorizer deserializer when '
+                         '--load-format=tensorizer'))
+
+        group.add_argument(
             "--tensorizer-uri",
-            help="Path to serialized model tensors. Can be a local file path"
-                 "or a S3 URI.",
+            help="Path to serialized model tensors. Can be a local file path,"
+            " or an HTTP(S) or S3 URI.",
         )
-        parser.add_argument(
-            "--plaid-mode-buffers",
-            default=None,
-            help="The number of buffers to use in plaid mode."
-            "This is only used if ``plaid_mode=True``. These buffers"
-            "are used to pipeline the loading and processing of tensors.",
-        )
-        parser.add_argument(
+        group.add_argument(
             "--verify-hash",
             action="store_true",
-            help="If True, the hashes of each tensor will be verified"
-            "against the hashes stored in the metadata. A `HashMismatchError`"
-            "will be raised if any of the hashes do not match.",
+            help="If enabled, the hashes of each tensor will be verified"
+            " against the hashes stored in the file metadata. An exception"
+            " will be raised if any of the hashes do not match.",
         )
-        parser.add_argument(
-            "--deserializer-encryption-key",
+        group.add_argument(
+            "--encryption-keyfile",
             default=None,
-            help="A `DecryptionParams` object holding a password or key"
-            "to use for decryption. ``None`` (the default) means no decryption.",
+            help="The file path to a binary file containing a binary key to "
+            "use for decryption. Can be a file path or S3 network URI.")
+        group.add_argument(
+            "--s3-access-key-id",
+            default=None,
+            help="The access key for the S3 bucket. Can also be set via the "
+            "S3_ACCESS_KEY_ID environment variable.",
         )
+        group.add_argument(
+            "--s3-secret-access-key",
+            default=None,
+            help="The secret access key for the S3 bucket. Can also be set via "
+            "the S3_SECRET_ACCESS_KEY environment variable.",
+        )
+        group.add_argument(
+            "--s3-endpoint",
+            default=None,
+            help="The endpoint for the S3 bucket. Can also be set via the "
+            "S3_ENDPOINT_URL environment variable.",
+        )
+
         return parser
 
     @classmethod
@@ -142,227 +164,75 @@ class TensorizerArgs:
         # Get the list of attributes of this dataclass.
         attrs = [attr.name for attr in dataclasses.fields(cls)]
         # Set the attributes from the parsed arguments.
-        tensorizer_args = cls(
-            **{attr: getattr(args, attr) for attr in attrs if hasattr(args, attr)}
-        )
+        tensorizer_args = cls(**{
+            attr: getattr(args, attr)
+            for attr in attrs if hasattr(args, attr)
+        })
         return tensorizer_args
 
 
-
 class TensorizerAgent:
-    def __init__(self, model_cls: Type[nn.Module],
-                 model_config: ModelConfig,
-                 ):
+    """
+    A class for performing tensorizer deserializations specifically for
+    vLLM models using plaid_mode. Uses TensorizerArgs to configure the
+    behavior of the TensorDeserializer when loading tensors from a serialized
+    model. For deserializations of HuggingFace models, TensorDeserializer is
+    instead used as an iterator directly in the func hf_model_weights_iterator
+    in vllm/model_executor/weight_utils.py
+    """
+
+    def __init__(
+        self,
+        model_cls: Type[nn.Module],
+        model_config: ModelConfig,
+    ):
         self.model_cls = model_cls
         self.model_config = model_config
         self.tensorizer_args = self.model_config.tensorizer_args
-        #self.serialize_model = not self._verify_path_reachable()
         self.model = self._init_model()
 
     def _init_model(self):
         model_args = self.model_config.hf_config
         model_args.torch_dtype = self.model_config.dtype
-        model = no_init_or_tensor(lambda: self.model_cls(*[model_args]))
-        return model
-
-    def _verify_path_reachable(self):
-        if not self.tensorizer_args.tensorizer_uri.endswith(".tensors"):
-            raise ValueError(f"download_dir {self.tensorizer_args.tensorizer_uri} must specify a .tensors "
-                             f"file when load_format = tensorizer")
+        with no_init_or_tensor():
+            return self.model_cls(model_args)
 
     def deserialize(self):
+        """
+        Deserialize the model using the TensorDeserializer. This method is
+        specifically for vLLM models using tensorizer's plaid_mode.
+
+        The deserializer makes use of tensorizer_args.stream_params
+        to configure the behavior of the stream when loading tensors from a
+        serialized model. The deserializer_params are used to configure the
+        behavior of the TensorDeserializer when loading tensors themselves.
+        Documentation on these params can be found in TensorizerArgs
+
+        Returns:
+            nn.Module: The deserialized model.
+        """
         before_mem = get_mem_usage()
         # Lazy load the tensors from S3 into the model.
-        start = time.time()
-        stream = stream_io.open_stream(self.tensorizer_args.tensorizer_uri, mode="rb", **self.tensorizer_args.credentials)
-        deserializer = TensorDeserializer(stream, **self.tensorizer_args.deserializer_params)
-        deserializer.load_into_module(self.model)
-        self.model = self.model.to(dtype=self.model_config.dtype)
-        end = time.time()
+        start = time.perf_counter()
+        with stream_io.open_stream(
+                self.tensorizer_args.tensorizer_uri,
+                mode="rb",
+                **self.tensorizer_args.stream_params,
+        ) as stream, TensorDeserializer(
+                stream,
+                dtype=self.model_config.dtype,
+                **self.tensorizer_args.deserializer_params) as deserializer:
+            deserializer.load_into_module(self.model)
+            end = time.perf_counter()
 
-        # Brag about how fast we are.
         total_bytes_str = convert_bytes(deserializer.total_tensor_bytes)
         duration = end - start
         per_second = convert_bytes(deserializer.total_tensor_bytes / duration)
         after_mem = get_mem_usage()
         deserializer.close()
-        logger.info(
-            f"Deserialized {total_bytes_str} in {end - start:0.2f}s, {per_second}/s"
-        )
+        logger.info(f"Deserialized {total_bytes_str} in "
+                    f"{end - start:0.2f}s, {per_second}/s")
         logger.info(f"Memory usage before: {before_mem}")
         logger.info(f"Memory usage after: {after_mem}")
 
         return self.model.eval()
-
-    # def serialize(self):
-    #     with torch.device("cuda"):
-    #         model = self.model_cls(self.model_config.hf_config)
-    #     self.model_config.load_format = "auto"
-    #     model.load_weights(
-    #         self.model_config.model,
-    #         self.model_config.download_dir,
-    #         self.model_config.load_format,
-    #         self.model_config.revision,
-    #     )
-    #     _make_model_contiguous(model)
-    #     stream = stream_io.open_stream(self.tensorizer_args.download_dir, "wb", **self.credentials)
-    #     serializer = TensorSerializer(stream, **self.serialize_args)
-    #     logger.info(
-    #         f"Serializing model tensors {self.model_config.model} to {self.tensorizer_args.download_dir}."
-    #     )
-    #     serializer.write_module(model)
-    #     serializer.close()
-    #     logger.info(
-    #         f"Serialization complete. Running the previous command will deserialize the saved model weights."
-    #     )
-    #     return model.eval()
-
-
-## Monkey patch for Parameter to ensure `requires_grad=False`
-#from torch.nn.parameter import Parameter
-
-# Save the original __init__ method for later use
-#original_new = Parameter.__new__
-
-#def _new(cls, data, requires_grad=False):
-#    return original_new(cls, data, requires_grad=requires_grad)
-
-# Replace the original __init__ method with our new one
-#Parameter.__new__ = _new
-
-# def tensorizer_loader(params_dict):
-#     return _TensorizerWeightsLoaderImpl(params_dict).context_manager()
-#
-# def qkv_weight_loader(self,
-#                   param: Parameter,
-#                   loaded_weight: torch.Tensor,
-#                   loaded_shard_id: Optional[str] = None):
-#     param_data = param.data
-#     output_dim = getattr(param, "output_dim", None)
-#     if output_dim is None:
-#         assert param_data.shape == loaded_weight.shape
-#         param_data.copy_(loaded_weight)
-#         return
-#
-#     assert loaded_shard_id in ["q", "k", "v"]
-#     if output_dim is not None:
-#         if loaded_shard_id == "q":
-#             shard_offset = 0
-#             shard_size = self.total_num_heads * self.head_size
-#         elif loaded_shard_id == "k":
-#             shard_offset = self.total_num_heads * self.head_size
-#             shard_size = self.total_num_kv_heads * self.head_size
-#         elif loaded_shard_id == "v":
-#             shard_offset = (self.total_num_heads +
-#                             self.total_num_kv_heads) * self.head_size
-#             shard_size = self.total_num_kv_heads * self.head_size
-#
-#     else:
-#         ignore_warning = getattr(param, "ignore_warning", False)
-#         if not ignore_warning:
-#             logger.warning(
-#                 "Loading a weight without `output_dim` attribute in "
-#                 "QKVParallelLinear, assume the weight is the same "
-#                 "for all partitions.")
-#     param_data[shard_offset: shard_offset + shard_size].copy_(loaded_weight)
-#
-# def tensorizer_weight_loader(param: nn.Parameter, loaded_weight: torch.Tensor, loaded_shard_id: Optional[int] = None):
-#     if param.nelement() == 0:
-#         param.set_(loaded_weight)
-#     else:
-#         # This is unavoidable for concatenating layers like QKVParallelLinear and certain buffers
-#         param.copy_(loaded_weight)
-#
-# class _TensorizerWeightsLoaderImpl:
-#     is_active = contextvars.ContextVar("_TensorizerWeightsLoaderImpl.is_active", default=False)
-#
-#     def __init__(self, params_dict):
-#         self.params_dict = params_dict
-#         self._original_loader = {}
-#         for param_name, param in self.params_dict.items():
-#             if hasattr(param, "weight_loader"):
-#                 self._original_loader[param_name] = param.weight_loader
-#
-#
-#     @contextlib.contextmanager
-#     def context_manager(self):
-#         if self.is_active.get():
-#             yield
-#             return
-#
-#         for param_name, param in self.params_dict.items():
-#             if not hasattr(param, "weight_loader"):
-#                 continue
-#             else:
-#                 layer_type = param.weight_loader.__self__
-#                 if not (isinstance(layer_type, QKVParallelLinear) | isinstance(layer_type, MergedColumnParallelLinear)):
-#                     param.weight_loader = tensorizer_weight_loader
-#                 else:
-#                     ## For QKVParallelLinear, and MergedColumnParallelLinear
-#                     param.resize_(param.shape[:-1])
-#
-#         reset_token = self.is_active.set(True)
-#
-#         try:
-#             yield
-#         finally:
-#             self.is_active.reset(reset_token)
-#             for param_name, param in self.params_dict.items():
-#                 if hasattr(param, "weight_loader"):
-#                     param.weight_loader = self._original_loader[param_name]
-#
-#
-#
-# @contextlib.contextmanager
-# def zero_length_init() -> typing.ContextManager:
-#     """
-#     Suppress the initialization of weights while loading a model.
-#     Appends a zero dimension (i.e. (...) -> (..., 0)) to the ``size``
-#     parameter of all calls to ``torch.empty`` while active.
-#     """
-#     global _active_count
-#     with _active_count_lock:
-#         _active_count += 1
-#         reset_token = _zero_length_init_active.set(True)
-#         if _active_count == 1:
-#             torch.empty = _torch_empty_substitute
-#             torch.ones = _torch_empty_substitute
-#     try:
-#         yield
-#     finally:
-#         with _active_count_lock:
-#             _active_count -= 1
-#             if _active_count == 0:
-#                 torch.empty = _torch_empty
-#                 torch.ones = _torch_empty ## TODO: Fix this, as this likely will cause issues with non-persistent buffers
-#             _zero_length_init_active.reset(reset_token)
-#
-#
-# _zero_length_init_active = contextvars.ContextVar(
-#     "_zero_length_init_active", default=False
-# )
-# _active_count: int = 0
-# _active_count_lock = threading.Lock()
-# _torch_empty: typing.Callable = torch.empty
-# _torch_ones: typing.Callable = torch.ones
-#
-#
-# @functools.wraps(_torch_empty)
-# def _torch_empty_substitute(*args, **kwargs):
-#     if _zero_length_init_active.get():
-#         if "size" in kwargs:
-#             kwargs["size"] = (*kwargs["size"], 0)
-#         elif len(args) > 1:
-#             # Varargs
-#             args = (*args, 0)
-#         elif len(args) == 1:
-#             # Either a single int or a single sequence
-#             dimension: typing.Union[
-#                 typing.Sequence[int], typing.SupportsIndex
-#             ] = args[0]
-#             try:
-#                 args = torch.Size((dimension, 0))
-#             except TypeError:
-#                 # Single sequence argument
-#                 args = ((*dimension, 0),)
-#     return _torch_empty(device = "cuda", requires_grad = False, *args, **kwargs)
