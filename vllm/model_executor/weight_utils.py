@@ -283,6 +283,7 @@ def hf_model_weights_iterator(
             category=PerformanceWarning,
             stacklevel=2)
         deserializer_args = tensorizer_args.deserializer_params
+        print("Using args: ", deserializer_args)
         stream_params = tensorizer_args.stream_params
         stream = open_stream(tensorizer_args.tensorizer_uri, **stream_params)
         with TensorDeserializer(stream, **deserializer_args,

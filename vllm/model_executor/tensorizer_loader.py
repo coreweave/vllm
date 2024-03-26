@@ -100,6 +100,7 @@ class TensorizerArgs:
         self.deserializer_params = {
             "verify_hash": self.verify_hash,
             "encryption": self.encryption_keyfile,
+            "num_readers": 4
         }
         if self.encryption_keyfile:
             with stream_io.open_stream(
@@ -222,6 +223,7 @@ class TensorizerAgent:
                 stream,
                 dtype=self.model_config.dtype,
                 **self.tensorizer_args.deserializer_params) as deserializer:
+            print("Using args: ", self.tensorizer_args.deserializer_params)
             deserializer.load_into_module(self.model)
             end = time.perf_counter()
 
