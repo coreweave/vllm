@@ -1,13 +1,19 @@
 deployments:
-- load_format: tensorizer
+- load_format: safetensors
   plaid_mode: ""
   lazy_load: ""
-- load_format: tensorizer
+- load_format: pt
   plaid_mode: ""
   lazy_load: ""
-- load_format: tensorizer
+- load_format: npcache
   plaid_mode: ""
   lazy_load: ""
-- load_format: tensorizer
+- load_format: safetensors
+  plaid_mode: ""
+  lazy_load: ""
+- load_format: pt
+  plaid_mode: ""
+  lazy_load: ""
+- load_format: npcache
   plaid_mode: ""
   lazy_load: ""

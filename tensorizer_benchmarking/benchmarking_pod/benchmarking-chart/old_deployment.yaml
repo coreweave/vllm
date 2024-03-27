@@ -48,19 +48,19 @@ spec:
               ## Download model tensors locally to serve on lighttpd
               cd /
               mkdir tensorized
-              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/EleutherAI/pythia-1.4b-vllm.tensors tensorized/EleutherAI/pythia-1.4b-vllm.tensors
-              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/mistralai/Mistral-7B-v0.1-vllm.tensors tensorized/mistralai/Mistral-7B-v0.1-vllm.tensors
-              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/Llama-2-13b-hf-vllm.tensors tensorized/meta-llama/Llama-2-13b-hf-vllm/model.tensors
+              # s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/EleutherAI/pythia-1.4b-vllm.tensors tensorized/EleutherAI/pythia-1.4b-vllm.tensors
+              # s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/mistralai/Mistral-7B-v0.1-vllm.tensors tensorized/mistralai/Mistral-7B-v0.1-vllm.tensors
+              s3cmd get --config /root/s3cfg/.s3cfg --skip-existing s3://tensorized-ssteel/Llama-2-13b-hf-vllm.tensors tensorized/meta-llama/Llama-2-13b-hf-vllm.tensors
 
               ## Start lighttpd server to serve model tensors
               echo "server.document-root = \"/tensorized\"" > /etc/lighttpd/lighttpd.conf
               lighttpd -D -f /etc/lighttpd/lighttpd.conf &
               
               cd vllm
-              num_iterations=500
+              num_iterations=250
               
               unique_id=$(date +%s)  # generate a unique identifier based on the current timestamp
-              models="EleutherAI/pythia-1.4b mistralai/Mistral-7B-v0.1 meta-llama/Llama-2-13b-hf"
+              models="meta-llama/Llama-2-13b-hf meta-llama/Llama-2-13b-hf EleutherAI/pythia-1.4b mistralai/Mistral-7B-v0.1"
               download_dir=~/.cache/weights
               
               ## Quick note: plaid_mode is automatically inferred by checking if the tensorizer_uri
