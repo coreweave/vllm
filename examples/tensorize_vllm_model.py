@@ -164,11 +164,16 @@ def deserialize():
             tensorizer_args.deserializer_params['encryption'] = \
                 decryption_params
 
-    with (_read_stream(model_path)) as stream, TensorDeserializer(
-            stream, **tensorizer_args.deserializer_params) as deserializer:
+    print(tensorizer_args.deserializer_params)
+    print("Deserializing...")
+    with ((_read_stream(model_path)) as stream, TensorDeserializer(
+            stream, **tensorizer_args.deserializer_params) as
+    deserializer):
+
         deserializer.load_into_module(model)
         end = time.time()
 
+    print("Done.")
     # Brag about how fast we are.
     total_bytes_str = convert_bytes(deserializer.total_tensor_bytes)
     duration = end - start
@@ -180,6 +185,9 @@ def deserialize():
     print(f"Memory usage before: {before_mem}")
     print(f"Memory usage after: {after_mem}")
 
+    ## Get model dtype
+    dtype = next(model.parameters()).dtype
+    print(f"Dtype is {dtype}")
     return model
 
 
