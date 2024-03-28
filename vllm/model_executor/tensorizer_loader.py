@@ -100,7 +100,7 @@ class TensorizerArgs:
         self.deserializer_params = {
             "verify_hash": self.verify_hash,
             "encryption": self.encryption_keyfile,
-            "num_readers": 4
+            "num_readers": 8
         }
         if self.encryption_keyfile:
             with stream_io.open_stream(
