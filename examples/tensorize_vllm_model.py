@@ -13,6 +13,16 @@ from tensorizer import (DecryptionParams, EncryptionParams, TensorDeserializer,
 from tensorizer.utils import convert_bytes, get_mem_usage, no_init_or_tensor
 from transformers import AutoConfig, AutoModelForCausalLM, PretrainedConfig
 
+import sys
+import os
+
+script_dir = os.path.dirname(os.path.realpath(__file__))
+
+parent_dir = os.path.dirname(script_dir)
+
+sys.path.append(parent_dir)
+
+
 from vllm.config import _get_and_verify_dtype
 from vllm.model_executor.models import ModelRegistry
 from vllm.model_executor.parallel_utils.parallel_state import (
