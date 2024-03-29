@@ -121,8 +121,8 @@ def serialize():
     model = AutoModelForCausalLM.from_pretrained(model_ref)
     config = AutoConfig.from_pretrained(model_ref)
     make_model_contiguous(model)
-    #to_dtype = _get_and_verify_dtype(config, dtype=dtype)
-    #model = model.to(dtype=to_dtype)
+    to_dtype = _get_and_verify_dtype(config, dtype=dtype)
+    model = model.to(dtype=to_dtype)
     with tempfile.TemporaryDirectory() as tmpdir:
         DOWNLOAD_DIR = os.path.join(tmpdir, model_name)
         model.save_pretrained(DOWNLOAD_DIR)
