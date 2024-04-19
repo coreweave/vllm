@@ -11,12 +11,15 @@ import torch
 
 from tests.entrypoints.test_openai_server import ServerRunner
 from vllm import SamplingParams
+# yapf: disable
 from vllm.model_executor.model_loader.tensorizer import (TensorizerConfig,
                                                          TensorSerializer,
                                                          is_vllm_tensorized,
                                                          load_with_tensorizer,
                                                          open_stream,
                                                          serialize_vllm_model)
+
+# yapf conflicts with isort for this docstring
 
 prompts = [
     "Hello, my name is",
