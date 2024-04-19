@@ -1,0 +1,110 @@
+{{- range $i, $v := .Values.deployments }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $v.load_format }}-{{ $i }}
+spec:
+  template:
+    spec:
+      containers:
+        - name: run-benchmark
+          image: nvcr.io/nvidia/pytorch:23.10-py3
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              ## Install same compiler used to build torch in the base image
+              # Update compiler (GCC) and linker (LLD) versions
+              apt-get update && apt-get install -y s3cmd lighttpd
+              
+              cd / && git clone --branch sangstar/updated-benchmarking https://github.com/coreweave/vllm.git
+              cd vllm
+              export MAX_JOBS=8
+
+              pip install -r requirements-build.txt
+              python3 setup.py build_ext --inplace
+              
+              pip install -r requirements-cuda.txt
+              
+              ## Download model tensors locally to serve on lighttpd
+              cd /
+              mkdir tensorized
+              
+              model_name=["pythia-1.4b", "mistral-7B", "llama-2-13b"]
+              base_path = "s3://tensorized-ssteel/vllm/$model_name/vllm_zero_benchmarks/model.tensors"
+              
+              for model in $model_name; do
+                  s3cmd get --config /root/s3cfg/.s3cfg $base_path /tensorized/$model.tensors
+              done
+              
+              ## Start lighttpd server to serve model tensors
+              echo "server.document-root = \"/tensorized\"" > /etc/lighttpd/lighttpd.conf
+              lighttpd -D -f /etc/lighttpd/lighttpd.conf &
+              
+              ## Run benchmark
+              cd /vllm
+              local={{ $v.local }}
+              output_path="/vllm/benchmark_results/$model/$local/results{{ $i }}.csv"
+              
+              max_its=5
+              
+              for i in {1..$max_its}; do
+                if [ "$local" == "local" ]; then
+                    python3 -m benchmark_tensorizer_loading --model_name $model_name --path_to_tensors /tensorized/$model.tensors --output_path $output_path
+                else
+                    python3 -m benchmark_tensorizer_loading --model_name $model_name --path_to_tensors http://localhost:80/$model_name.tensors --output_path $output_path
+                fi
+              done
+              
+              s3cmd put --config /root/s3cfg/.s3cfg $output_path s3://tensorized-ssteel/vllm_zero_benchmarks/$model/$local/results{{ $i }}.csv
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: token
+            - name: S3_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: "s3-access-key"
+                  key: "key"
+            - name: S3_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: "s3-secret-key"
+                  key: "key"
+            - name: DEBIAN_FRONTEND
+              value: noninteractive
+          volumeMounts:
+            - name: s3cfg
+              mountPath: /root/s3cfg
+          resources:
+            requests:
+              cpu: "32"
+              memory: 228Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "32"
+              memory: 228Gi
+              nvidia.com/gpu: "1"
+      volumes:
+        - name: s3cfg
+          secret:
+            secretName: s3cfg-raw
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/region
+                operator: In
+                values:
+                  - "ORD1"
+              - key: gpu.nvidia.com/class
+                operator: In
+                values:
+                  - "RTX_A6000"
+      restartPolicy: OnFailure
+---
+{{- end }}

@@ -35,6 +35,7 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str)
     parser.add_argument("--path_to_tensors", type=str)
+    parser.add_argument("--output_path", type=str)
     return parser.parse_args()
 
 def benchmark_load(model, tensorizer_config, path):
@@ -55,6 +56,7 @@ def benchmark_load(model, tensorizer_config, path):
         initial_time=initial_time,
         final_time=final_time
     ).append_to_csv(path)
+    return
 
 
 if __name__ == "__main__":
@@ -63,4 +65,4 @@ if __name__ == "__main__":
         tensorizer_uri=args.path_to_tensors,
         **shared_params
     )
-    benchmark_load(args.model, config, args.path_to_tensors)
+    benchmark_load(args.model, config, args.output_path)

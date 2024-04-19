@@ -1,0 +1,13 @@
+deployments:
+- load_format: tensorizer
+  local: True
+- load_format: tensorizer
+  local: False
+- load_format: tensorizer
+  local: True
+- load_format: tensorizer
+  local: False
+- load_format: tensorizer
+  local: True
+- load_format: tensorizer
+  local: False
