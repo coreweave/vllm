@@ -3,7 +3,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $v.load_format }}-{{ $v.local }}-{{ $v.gpu }}-{{ $i }}
+  name: {{ $v.load_format }}-{{ $v.local }}-{{ lower (replace "_" "-" $v.gpu) }}-{{ $i }}
 spec:
   template:
     spec:
@@ -24,6 +24,7 @@ spec:
 
               pip install vllm[tensorizer]
               pip install tensorizer
+              python3 setup.py build_ext --inplace
               
               ## Download model tensors locally to serve on lighttpd
               cd /
@@ -34,7 +35,7 @@ spec:
               model_name=("EleutherAI/pythia-1.4b" "mistralai/Mistral-7B-v0.1" "meta-llama/Llama-2-13b-hf")
               
               for model in $model_name; do
-                  base_path = "s3://tensorized-ssteel/vllm/$model/vllm_zero_benchmarks/model.tensors"
+                  base_path="s3://tensorized-ssteel/vllm/$model/vllm_zero_benchmarks/model.tensors"
                   s3cmd get --config /root/s3cfg/.s3cfg $base_path /tensorized/$model.tensors
               done
               
@@ -48,9 +49,15 @@ spec:
               gpu={{ $v.gpu }}
               output_path="/vllm/benchmark_results/$model/$local/results{{ $i }}.csv"
               
-              max_its=5
+              max_its=1000
               
-              for i in {1..$max_its}; do
+              # Ensure output_path exists
+              mkdir -p $(dirname $output_path)
+              
+              for j in $(seq 1 $max_its); do
+                echo "========================================================"
+                echo "Running iteration ${j} for model $model"
+                echo "========================================================"
                 if [ "$local" == "local" ]; then
                     python3 benchmarks/benchmark_tensorizer_loading.py --model $model_name --path_to_tensors /tensorized/$model.tensors --output_path $output_path
                 else
@@ -105,7 +112,7 @@ spec:
               - key: gpu.nvidia.com/class
                 operator: In
                 values:
-                  - "RTX_A5000"
+                  - {{ $v.gpu }}
       restartPolicy: OnFailure
 ---
 {{- end }}

@@ -25,7 +25,7 @@ class BenchmarkStatistics:
                     "duration,cache_status\n")
         with open(path, 'a') as f:
             f.write(f"tensorizer,{self.model_name},{self.initial_mem_usage},"
-                    f"{self.final_mem_usage},{self.duration},omitted")
+                    f"{self.final_mem_usage},{self.duration},omitted\n")
 
 shared_params = {
     "num_readers": 6,
