@@ -3,7 +3,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $v.load_format }}-{{ $v.local }}-{{ $i }}
+  name: {{ $v.load_format }}-{{ $v.local }}-{{ $v.gpu }}-{{ $i }}
 spec:
   template:
     spec:
@@ -23,15 +23,18 @@ spec:
               export MAX_JOBS=8
 
               pip install vllm[tensorizer]
+              pip install tensorizer
               
               ## Download model tensors locally to serve on lighttpd
               cd /
               mkdir tensorized
               
-              model_name=["EleutherAI/pythia-1.4b", "mistralai/Mistral-7B-v0.1", "meta-llama/Llama-2-13b-hf"]
+              export PYTHONPATH=$PYTHONPATH:/
+              
+              model_name=("EleutherAI/pythia-1.4b" "mistralai/Mistral-7B-v0.1" "meta-llama/Llama-2-13b-hf")
               
               for model in $model_name; do
-                  base_path = "s3://tensorized-ssteel/vllm/vllm_zero_benchmarks/$model.tensors"
+                  base_path = "s3://tensorized-ssteel/vllm/$model/vllm_zero_benchmarks/model.tensors"
                   s3cmd get --config /root/s3cfg/.s3cfg $base_path /tensorized/$model.tensors
               done
               
@@ -42,19 +45,20 @@ spec:
               ## Run benchmark
               cd /vllm
               local={{ $v.local }}
+              gpu={{ $v.gpu }}
               output_path="/vllm/benchmark_results/$model/$local/results{{ $i }}.csv"
               
               max_its=5
               
               for i in {1..$max_its}; do
                 if [ "$local" == "local" ]; then
-                    python3 benchmarks/benchmark_tensorizer_loading.py --model_name $model_name --path_to_tensors /tensorized/$model.tensors --output_path $output_path
+                    python3 benchmarks/benchmark_tensorizer_loading.py --model $model_name --path_to_tensors /tensorized/$model.tensors --output_path $output_path
                 else
-                    python3 benchmarks/benchmark_tensorizer_loading.py --model_name $model_name --path_to_tensors http://localhost:80/$model_name.tensors --output_path $output_path
+                    python3 benchmarks/benchmark_tensorizer_loading.py --model $model_name --path_to_tensors http://localhost:80/$model_name.tensors --output_path $output_path
                 fi
               done
               
-              s3cmd put --config /root/s3cfg/.s3cfg $output_path s3://tensorized-ssteel/vllm_zero_benchmarks/$model/$local/results{{ $i }}.csv
+              s3cmd put --config /root/s3cfg/.s3cfg $output_path s3://tensorized-ssteel/vllm_zero_benchmarks/$gpu/$model/$local/results{{ $i }}.csv
           env:
             - name: HF_TOKEN
               valueFrom:
@@ -101,7 +105,7 @@ spec:
               - key: gpu.nvidia.com/class
                 operator: In
                 values:
-                  - "A40"
+                  - "RTX_A5000"
       restartPolicy: OnFailure
 ---
 {{- end }}
