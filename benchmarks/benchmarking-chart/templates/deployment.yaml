@@ -22,19 +22,16 @@ spec:
               cd vllm
               export MAX_JOBS=8
 
-              pip install -r requirements-build.txt
-              python3 setup.py build_ext --inplace
-              
-              pip install -r requirements-cuda.txt
+              pip install vllm[tensorizer]
               
               ## Download model tensors locally to serve on lighttpd
               cd /
               mkdir tensorized
               
-              model_name=["pythia-1.4b", "mistral-7B", "llama-2-13b"]
-              base_path = "s3://tensorized-ssteel/vllm/$model_name/vllm_zero_benchmarks/model.tensors"
+              model_name=["EleutherAI/pythia-1.4b", "mistralai/Mistral-7B-v0.1", "meta-llama/Llama-2-13b-hf"]
               
               for model in $model_name; do
+                  base_path = "s3://tensorized-ssteel/vllm/vllm_zero_benchmarks/$model.tensors"
                   s3cmd get --config /root/s3cfg/.s3cfg $base_path /tensorized/$model.tensors
               done
               
