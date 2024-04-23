@@ -32,7 +32,7 @@ spec:
               
               export PYTHONPATH=$PYTHONPATH:/
               
-              model_name=("EleutherAI/pythia-1.4b" "mistralai/Mistral-7B-v0.1" "meta-llama/Llama-2-13b-hf")
+              model_name="EleutherAI/pythia-1.4b" "mistralai/Mistral-7B-v0.1" "meta-llama/Llama-2-13b-hf"
               
               for model in $model_name; do
                   base_path="s3://tensorized-ssteel/vllm/$model/vllm_zero_benchmarks/model.tensors"
@@ -47,25 +47,27 @@ spec:
               cd /vllm
               local={{ $v.local }}
               gpu={{ $v.gpu }}
-              output_path="/vllm/benchmark_results/$model/$local/results{{ $i }}.csv"
               
-              max_its=1000
+              for model in $model_name; do
+                output_path="/vllm/benchmark_results/$model/$local/results{{ $i }}.csv"
               
-              # Ensure output_path exists
-              mkdir -p $(dirname $output_path)
+                max_its=5
               
-              for j in $(seq 1 $max_its); do
-                echo "========================================================"
-                echo "Running iteration ${j} for model $model"
-                echo "========================================================"
-                if [ "$local" == "local" ]; then
-                    python3 benchmarks/benchmark_tensorizer_loading.py --model $model_name --path_to_tensors /tensorized/$model.tensors --output_path $output_path
-                else
-                    python3 benchmarks/benchmark_tensorizer_loading.py --model $model_name --path_to_tensors http://localhost:80/$model_name.tensors --output_path $output_path
-                fi
+                # Ensure output_path exists
+                mkdir -p $(dirname $output_path)
+                for j in $(seq 1 $max_its); do
+                  echo "========================================================"
+                  echo "Running iteration ${j} for model $model"
+                  echo "========================================================"
+                  if [ "$local" == "local" ]; then
+                      python3 benchmarks/benchmark_tensorizer_loading.py --model $model --path_to_tensors /tensorized/$model.tensors --output_path $output_path
+                  else
+                      python3 benchmarks/benchmark_tensorizer_loading.py --model $model --path_to_tensors http://localhost:80/$model_name.tensors --output_path $output_path
+                  fi
+                done
+                s3cmd put --config /root/s3cfg/.s3cfg $output_path s3://tensorized-ssteel/vllm_zero_benchmarks/$gpu/$model/$local/results{{ $i }}.csv
               done
               
-              s3cmd put --config /root/s3cfg/.s3cfg $output_path s3://tensorized-ssteel/vllm_zero_benchmarks/$gpu/$model/$local/results{{ $i }}.csv
           env:
             - name: HF_TOKEN
               valueFrom:

@@ -27,10 +27,6 @@ class BenchmarkStatistics:
             f.write(f"tensorizer,{self.model_name},{self.initial_mem_usage},"
                     f"{self.final_mem_usage},{self.duration},omitted\n")
 
-shared_params = {
-    "num_readers": 6,
-}
-
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", type=str)
@@ -63,6 +59,5 @@ if __name__ == "__main__":
     args = parse_args()
     config = TensorizerConfig(
         tensorizer_uri=args.path_to_tensors,
-        **shared_params
     )
     benchmark_load(args.model, config, args.output_path)
