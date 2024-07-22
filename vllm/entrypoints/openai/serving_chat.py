@@ -214,7 +214,7 @@ class OpenAIServingChat(OpenAIServing):
                             created=created_time,
                             choices=[choice_data],
                             model=model_name)
-                        data = chunk.model_dump_json(exclude_unset=True)
+                        data = chunk.model_dump_json(exclude_unset=False)
                         yield f"data: {data}\n\n"
 
                     # Send response to echo the input portion of the
@@ -242,7 +242,7 @@ class OpenAIServingChat(OpenAIServing):
                                     logprobs=None,
                                     model=model_name)
                                 data = chunk.model_dump_json(
-                                    exclude_unset=True)
+                                    exclude_unset=False)
                                 yield f"data: {data}\n\n"
                     first_iteration = False
 
@@ -282,7 +282,7 @@ class OpenAIServingChat(OpenAIServing):
                             created=created_time,
                             choices=[choice_data],
                             model=model_name)
-                        data = chunk.model_dump_json(exclude_unset=True)
+                        data = chunk.model_dump_json(exclude_unset=False)
                         yield f"data: {data}\n\n"
                     else:
                         # Send the finish response for each request.n only once
@@ -307,7 +307,7 @@ class OpenAIServingChat(OpenAIServing):
                             model=model_name)
                         if final_usage is not None:
                             chunk.usage = final_usage
-                        data = chunk.model_dump_json(exclude_unset=True,
+                        data = chunk.model_dump_json(exclude_unset=False,
                                                      exclude_none=True)
                         yield f"data: {data}\n\n"
                         finish_reason_sent[i] = True

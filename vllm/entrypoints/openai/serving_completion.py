@@ -267,7 +267,7 @@ class OpenAIServingCompletion(OpenAIServing):
                             )
                         ],
                         usage=final_usage,
-                    ).model_dump_json(exclude_unset=True)
+                    ).model_dump_json(exclude_unset=False)
                     yield f"data: {response_json}\n\n"
         except ValueError as e:
             # TODO: Use a vllm-specific Validation Error
