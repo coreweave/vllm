@@ -344,3 +344,58 @@ def test_vllm_tensorized_model_has_same_outputs(vllm_runner, tmp_path):
         # noqa: E501
 
         assert outputs == deserialized_outputs
+
+
+def test_serialize_lora_model(tmp_path):
+    from safetensors.torch import load_file
+    from vllm.lora.models import LoRAModel
+    import json
+    import shutil
+    from vllm.lora.request import LoRARequest
+    from vllm import LLM, SamplingParams
+
+    EMBEDDING_MODULES = {
+        "embed_tokens": "input_embeddings",
+        "lm_head": "output_embeddings",
+    }
+
+    EMBEDDING_PADDING_MODULES = ["lm_head"]
+
+    sql_lora_files = snapshot_download(repo_id="yard1/llama-2-7b-sql-lora-test")
+    device = "cuda"
+    tensor_path = os.path.join(sql_lora_files, "adapter_model.safetensors")
+    config_path = os.path.join(sql_lora_files, "adapter_config.json")
+    tensors = load_file(tensor_path)
+
+    shutil.copy(config_path, tmp_path / "adapter_config.json")
+
+    tensorizer_uri = tmp_path / "adapter_model.tensors"
+    serializer = TensorSerializer(tensorizer_uri)
+    serializer.write_state_dict(tensors)
+    serializer.close()
+
+
+    # Now, load it
+
+    loaded_vllm_model = LLM(model="meta-llama/Llama-2-7b-hf", enable_lora=True)
+    sampling_params = SamplingParams(
+        temperature=0,
+        max_tokens=256,
+        stop=["[/assistant]"]
+    )
+
+    prompts = [
+        "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_74 (icao VARCHAR, airport VARCHAR)\n\n question: Name the ICAO for lilongwe international airport [/user] [assistant]",
+        "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_11 (nationality VARCHAR, elector VARCHAR)\n\n question: When Anchero Pantaleone was the elector what is under nationality? [/user] [assistant]",
+    ]
+
+    lora_path = tmp_path
+    outputs = loaded_vllm_model.generate(
+        prompts,
+        sampling_params,
+        lora_request=LoRARequest("sql-lora", 1, lora_path)
+    )
+
+
+
+
