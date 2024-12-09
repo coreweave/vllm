@@ -8,10 +8,9 @@ import uuid
 
 from vllm import LLM
 from vllm.engine.arg_utils import EngineArgs
-from vllm.model_executor.model_loader.tensorizer import (TensorizerArgs,
-                                                         TensorizerConfig,
-                                                         tensorize_vllm_model,
-                                                         tensorize_lora_adapter)
+from vllm.model_executor.model_loader.tensorizer import (
+    TensorizerArgs, TensorizerConfig, tensorize_lora_adapter,
+    tensorize_vllm_model)
 from vllm.utils import FlexibleArgumentParser
 
 # yapf conflicts with isort for this docstring
@@ -197,9 +196,9 @@ def deserialize():
             stop=["[/assistant]"]
         )
 
+        # Truncating this as the extra text isn't necessary
         prompts = [
-            "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_74 (icao VARCHAR, airport VARCHAR)\n\n question: Name the ICAO for lilongwe international airport [/user] [assistant]",
-            "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_11 (nationality VARCHAR, elector VARCHAR)\n\n question: When Anchero Pantaleone was the elector what is under nationality? [/user] [assistant]",
+            "[user] Write a SQL query to answer the question based on ..."
         ]
 
         # Test LoRA load

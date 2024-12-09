@@ -352,14 +352,15 @@ def test_vllm_tensorized_model_has_same_outputs(vllm_runner, tmp_path):
 
 
 def test_serialize_lora_model(tmp_path):
-    from safetensors.torch import load_file
-    from vllm.lora.models import LoRAModel
-    import json
     import shutil
-    from vllm.lora.request import LoRARequest
-    from vllm import LLM, SamplingParams
 
-    sql_lora_files = snapshot_download(repo_id="yard1/llama-2-7b-sql-lora-test")
+    from safetensors.torch import load_file
+
+    from vllm import LLM, SamplingParams
+    from vllm.lora.request import LoRARequest
+
+    sql_lora_files = snapshot_download(
+        repo_id="yard1/llama-2-7b-sql-lora-test")
     tensor_path = os.path.join(sql_lora_files, "adapter_model.safetensors")
     config_path = os.path.join(sql_lora_files, "adapter_config.json")
     tensors = load_file(tensor_path)
@@ -371,34 +372,25 @@ def test_serialize_lora_model(tmp_path):
     serializer.write_state_dict(tensors)
     serializer.close()
 
-
     # Now, load it
 
     loaded_vllm_model = LLM(model="meta-llama/Llama-2-7b-hf", enable_lora=True)
-    sampling_params = SamplingParams(
-        temperature=0,
-        max_tokens=256,
-        stop=["[/assistant]"]
-    )
+    sampling_params = SamplingParams(temperature=0,
+                                     max_tokens=256,
+                                     stop=["[/assistant]"])
 
     prompts = [
-        "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_74 (icao VARCHAR, airport VARCHAR)\n\n question: Name the ICAO for lilongwe international airport [/user] [assistant]",
-        "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_11 (nationality VARCHAR, elector VARCHAR)\n\n question: When Anchero Pantaleone was the elector what is under nationality? [/user] [assistant]",
+        "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_74 (icao VARCHAR, airport VARCHAR)\n\n question: Name the ICAO for lilongwe international airport [/user] [assistant]",  # noqa: E501
+        "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_11 (nationality VARCHAR, elector VARCHAR)\n\n question: When Anchero Pantaleone was the elector what is under nationality? [/user] [assistant]",  # noqa: E501
     ]
 
     lora_path = tmp_path
     lora_tensorizer_uri = str(tmp_path) + "/model.tensors"
-    outputs = loaded_vllm_model.generate(
-        prompts,
-        sampling_params,
-        lora_request=LoRARequest("sql-lora",
-                                 1,
-                                 lora_path,
-                                 tensorizer_config = TensorizerConfig(
-                                     tensorizer_uri = lora_tensorizer_uri,
-                                 ))
-    )
-
-
-
-
+    loaded_vllm_model.generate(prompts,
+                               sampling_params,
+                               lora_request=LoRARequest(
+                                   "sql-lora",
+                                   1,
+                                   lora_path,
+                                   tensorizer_config=TensorizerConfig(
+                                       tensorizer_uri=lora_tensorizer_uri, )))
