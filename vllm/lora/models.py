@@ -213,7 +213,8 @@ class LoRAModel(AdapterModel):
         if os.getenv("USE_TENSORIZER_LORA") == "1":
             lora_tensor_path = os.path.join(lora_dir, "adapter_model.tensors")
         else:
-            lora_tensor_path = os.path.join(lora_dir, "adapter_model.safetensors")
+            lora_tensor_path = os.path.join(lora_dir,
+                                            "adapter_model.safetensors")
         lora_bin_file_path = os.path.join(lora_dir, "adapter_model.bin")
         new_embeddings_tensor_path = os.path.join(
             lora_dir, "new_embeddings.safetensors")
@@ -233,7 +234,8 @@ class LoRAModel(AdapterModel):
             if tensorizer_config:
                 from tensorizer import TensorDeserializer
 
-                tensorizer_args = tensorizer_config._construct_tensorizer_args()
+                tensorizer_args = tensorizer_config._construct_tensorizer_args(
+                )
                 tensors = TensorDeserializer(
                     lora_tensor_path,
                     dtype=tensorizer_config.dtype,
@@ -241,8 +243,8 @@ class LoRAModel(AdapterModel):
                     **tensorizer_args.deserializer_params)
 
             else:
-                with safetensors.safe_open(lora_tensor_path,
-                                           framework="pt") as f:  # type: ignore
+                with safetensors.safe_open(
+                        lora_tensor_path, framework="pt") as f:  # type: ignore
                     for lora_module in f.keys():  # noqa
                         module_name, _, _ = parse_fine_tuned_lora_name(
                             lora_module, weights_mapper)
@@ -254,8 +256,8 @@ class LoRAModel(AdapterModel):
                             f"While loading {lora_dir}, expected"
                             f" target modules in {expected_lora_modules}"
                             f" but received {unexpected_modules}."
-                            f" Please verify that the loaded LoRA module is correct"
-                        )
+                            f" Please verify that the loaded LoRA module "
+                            f"is correct")
                     # Load tensors if there are only expected modules.
                     for module in f.keys():  # noqa
                         tensors[module] = f.get_tensor(module)

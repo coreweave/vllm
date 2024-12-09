@@ -468,12 +468,13 @@ def tensorize_vllm_model(engine_args: EngineArgs,
         kwargs=dict(tensorizer_config=tensorizer_config),
     )
 
+
 def tensorize_lora_adapter(lora_path: str,
-                         tensorizer_config: TensorizerConfig):
-    from huggingface_hub import snapshot_download
-    from safetensors.torch import load_file
+                           tensorizer_config: TensorizerConfig):
     import shutil
 
+    from huggingface_hub import snapshot_download
+    from safetensors.torch import load_file
 
     # TODO: Consider if the model tensors are in an initial format
     #  other than safetensors, such as .pt
@@ -486,15 +487,12 @@ def tensorize_lora_adapter(lora_path: str,
     config_path = os.path.join(lora_files, "adapter_config.json")
     tensors = load_file(tensor_path)
 
-    shutil.copy(
-        config_path,
-        f"{tensorizer_config.tensorizer_dir}"
-    )
+    shutil.copy(config_path, f"{tensorizer_config.tensorizer_dir}")
     lora_uri = (f"{tensorizer_config.tensorizer_dir}"
-                                        f"/adapter_model.tensors")
+                f"/adapter_model.tensors")
     tensorizer_args = tensorizer_config._construct_tensorizer_args()
     with open_stream(lora_uri, mode="wb+",
-                    **tensorizer_args.stream_params) as f:
+                     **tensorizer_args.stream_params) as f:
         serializer = TensorSerializer(f)
         serializer.write_state_dict(tensors)
         serializer.close()
