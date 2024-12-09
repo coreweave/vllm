@@ -192,6 +192,7 @@ class LoRAModel(AdapterModel):
         embedding_modules: Optional[Dict[str, str]] = None,
         embedding_padding_modules: Optional[List[str]] = None,
         weights_mapper: Optional[WeightsMapper] = None,
+        **kwargs
     ) -> "LoRAModel":
         """Create a LoRAModel from a local checkpoint.
         
@@ -229,10 +230,16 @@ class LoRAModel(AdapterModel):
             # loraified. C won’t exist in the safetensor but it will exist in
             # the target_modules of the adapter_config.json.
             unexpected_modules = []
-            if os.getenv("USE_TENSORIZER_LORA") == "1":
+            if tensorizer_config:
                 from tensorizer import TensorDeserializer
-                # TODO: Couple TensorizerConfig to this
-                tensors = TensorDeserializer(lora_tensor_path)
+
+                tensorizer_args = tensorizer_config._construct_tensorizer_args()
+                tensors = TensorDeserializer(
+                    lora_tensor_path,
+                    dtype=tensorizer_config.dtype,
+                    device=f'cuda:{torch.cuda.current_device()}',
+                    **tensorizer_args.deserializer_params)
+
             else:
                 with safetensors.safe_open(lora_tensor_path,
                                            framework="pt") as f:  # type: ignore

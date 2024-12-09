@@ -123,6 +123,7 @@ class WorkerLoRAManager(AbstractWorkerManager):
                 self.lora_config.lora_extra_vocab_size,
                 embedding_modules=self.embedding_modules,
                 embedding_padding_modules=self.embedding_padding_modules,
+                tensorizer_config=lora_request.tensorizer_config,
                 weights_mapper=hf_to_vllm_mapper)
 
         except FileNotFoundError as e:
