@@ -108,6 +108,17 @@ def parse_args():
         "also supported, although libsodium must be installed to "
         "use it.")
     parser = EngineArgs.add_cli_args(parser)
+
+    parser.add_argument(
+        "--lora-path",
+        type=str,
+        required=False,
+        help="Path to a LoRA adapter to "
+        "serialize along with model tensors. This can then be deserialized "
+        "along with the model by passing a tensorizer_config kwarg to "
+        "LoRARequest with type TensorizerConfig."
+    )
+
     subparsers = parser.add_subparsers(dest='command')
 
     serialize_parser = subparsers.add_parser(
@@ -145,16 +156,6 @@ def parse_args():
         help=("Encrypt the model weights with a randomly-generated binary key,"
               " and save the key at this path"))
 
-    serialize_parser.add_argument(
-        "--lora-path",
-        type=str,
-        required=False,
-        help="Path to a LoRA adapter to "
-        "serialize along with model tensors. This can then be deserialized "
-        "along with the model by passing a tensorizer_config kwarg to "
-        "LoRARequest with type TensorizerConfig."
-    )
-
     deserialize_parser = subparsers.add_parser(
         'deserialize',
         help=("Deserialize a model from `--path-to-tensors`"
@@ -180,11 +181,44 @@ def parse_args():
 
 
 def deserialize():
-    llm = LLM(model=args.model,
-              load_format="tensorizer",
-              tensor_parallel_size=args.tensor_parallel_size,
-              model_loader_extra_config=tensorizer_config
-    )
+    if args.lora_path:
+        from vllm import SamplingParams
+        from vllm.lora.request import LoRARequest
+
+        llm = LLM(model=args.model,
+                  load_format="tensorizer",
+                  tensor_parallel_size=args.tensor_parallel_size,
+                  model_loader_extra_config=tensorizer_config,
+                  enable_lora=True
+        )
+        sampling_params = SamplingParams(
+            temperature=0,
+            max_tokens=256,
+            stop=["[/assistant]"]
+        )
+
+        prompts = [
+            "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_74 (icao VARCHAR, airport VARCHAR)\n\n question: Name the ICAO for lilongwe international airport [/user] [assistant]",
+            "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_11 (nationality VARCHAR, elector VARCHAR)\n\n question: When Anchero Pantaleone was the elector what is under nationality? [/user] [assistant]",
+        ]
+
+        # Test LoRA load
+        print(
+            llm.generate(
+            prompts,
+            sampling_params,
+            lora_request=LoRARequest("sql-lora",
+                                     1,
+                                     lora_path,
+                                     tensorizer_config = tensorizer_config)
+            )
+        )
+    else:
+        llm = LLM(model=args.model,
+                  load_format="tensorizer",
+                  tensor_parallel_size=args.tensor_parallel_size,
+                  model_loader_extra_config=tensorizer_config
+        )
     return llm
 
 
