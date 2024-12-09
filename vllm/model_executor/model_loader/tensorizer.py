@@ -65,6 +65,7 @@ class TensorizerConfig:
         # check if the configuration is for a sharded vLLM model
         self._is_sharded = isinstance(self.tensorizer_uri, str) \
             and re.search(r'%0\dd', self.tensorizer_uri) is not None
+        self.tensorizer_dir = self.tensorizer_uri.rpartition("/")[0]
 
     def _construct_tensorizer_args(self) -> "TensorizerArgs":
         tensorizer_args = {
@@ -469,3 +470,32 @@ def tensorize_vllm_model(engine_args: EngineArgs,
             engine.model_executor.driver_worker.model_runner.model,
             tensorizer_config,
         )
+
+
+def tensorize_lora_adapter(lora_path: str,
+                           tensorizer_config: TensorizerConfig):
+    import shutil
+
+    from huggingface_hub import snapshot_download
+    from safetensors.torch import load_file
+
+    # TODO: Consider if the model tensors are in an initial format
+    #  other than safetensors, such as .pt
+    # TODO: Is there a guarantee the adapter_model and adapter_config
+    #  prefixes are the ones that will always used? Probably allow
+    #  specifying paths for these files
+
+    lora_files = snapshot_download(repo_id=lora_path)
+    tensor_path = os.path.join(lora_files, "adapter_model.safetensors")
+    config_path = os.path.join(lora_files, "adapter_config.json")
+    tensors = load_file(tensor_path)
+
+    shutil.copy(config_path, f"{tensorizer_config.tensorizer_dir}")
+    lora_uri = (f"{tensorizer_config.tensorizer_dir}"
+                f"/adapter_model.tensors")
+    tensorizer_args = tensorizer_config._construct_tensorizer_args()
+    with open_stream(lora_uri, mode="wb+",
+                     **tensorizer_args.stream_params) as f:
+        serializer = TensorSerializer(f)
+        serializer.write_state_dict(tensors)
+        serializer.close()

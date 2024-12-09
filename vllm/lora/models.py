@@ -173,19 +173,20 @@ class LoRAModel(AdapterModel):
         return cls(lora_model_id, rank, loras, scaling_factor=scaling_factor)
 
     @classmethod
-    def from_local_checkpoint(
-        cls,
-        lora_dir: str,
-        expected_lora_modules: List[str],
-        *,
-        max_position_embeddings: Optional[int] = None,
-        lora_model_id: Optional[int] = None,
-        device: str = "cuda",
-        dtype: Optional[torch.dtype] = None,
-        target_embedding_padding: Optional[int] = None,
-        embedding_modules: Optional[Dict[str, str]] = None,
-        embedding_padding_modules: Optional[List[str]] = None,
-    ) -> "LoRAModel":
+    def from_local_checkpoint(cls,
+                              lora_dir: str,
+                              expected_lora_modules: List[str],
+                              *,
+                              max_position_embeddings: Optional[int] = None,
+                              lora_model_id: Optional[int] = None,
+                              device: str = "cuda",
+                              dtype: Optional[torch.dtype] = None,
+                              target_embedding_padding: Optional[int] = None,
+                              embedding_modules: Optional[Dict[str,
+                                                               str]] = None,
+                              embedding_padding_modules: Optional[
+                                  List[str]] = None,
+                              **kwargs) -> "LoRAModel":
         """Create a LoRAModel from a local checkpoint.
         
         Args:
@@ -203,8 +204,15 @@ class LoRAModel(AdapterModel):
         Returns:
             Loaded LoRA Model.
         """
+
         lora_config_path = os.path.join(lora_dir, "adapter_config.json")
-        lora_tensor_path = os.path.join(lora_dir, "adapter_model.safetensors")
+        tensorizer_config = kwargs.get('tensorizer_config', None)
+        if tensorizer_config:
+            lora_tensor_path = os.path.join(tensorizer_config.tensorizer_dir,
+                                            "adapter_model.tensors")
+        else:
+            lora_tensor_path = os.path.join(lora_dir,
+                                            "adapter_model.safetensors")
         lora_bin_file_path = os.path.join(lora_dir, "adapter_model.bin")
         new_embeddings_tensor_path = os.path.join(
             lora_dir, "new_embeddings.safetensors")
@@ -221,23 +229,36 @@ class LoRAModel(AdapterModel):
             # loraified. C won’t exist in the safetensor but it will exist in
             # the target_modules of the adapter_config.json.
             unexpected_modules = []
-            with safetensors.safe_open(lora_tensor_path,
-                                       framework="pt") as f:  # type: ignore
-                for lora_module in f.keys():  # noqa
-                    module_name, _, _ = parse_fine_tuned_lora_name(lora_module)
-                    part_name = module_name.split(".")[-1]
-                    if part_name not in expected_lora_modules:
-                        unexpected_modules.append(module_name)
-                if unexpected_modules:
-                    raise ValueError(
-                        f"While loading {lora_dir}, expected"
-                        f" target modules in {expected_lora_modules}"
-                        f" but received {unexpected_modules}."
-                        f" Please verify that the loaded LoRA module is correct"
-                    )
-                # Load tensors if there are only expected modules.
-                for module in f.keys():  # noqa
-                    tensors[module] = f.get_tensor(module)
+            if tensorizer_config:
+                from tensorizer import TensorDeserializer
+
+                tensorizer_args = tensorizer_config._construct_tensorizer_args(
+                )
+                tensors = TensorDeserializer(
+                    lora_tensor_path,
+                    dtype=tensorizer_config.dtype,
+                    device=f'cuda:{torch.cuda.current_device()}',
+                    **tensorizer_args.deserializer_params)
+
+            else:
+                with safetensors.safe_open(
+                        lora_tensor_path, framework="pt") as f:  # type: ignore
+                    for lora_module in f.keys():  # noqa
+                        module_name, _, _ = parse_fine_tuned_lora_name(
+                            lora_module)
+                        part_name = module_name.split(".")[-1]
+                        if part_name not in expected_lora_modules:
+                            unexpected_modules.append(module_name)
+                    if unexpected_modules:
+                        raise ValueError(
+                            f"While loading {lora_dir}, expected"
+                            f" target modules in {expected_lora_modules}"
+                            f" but received {unexpected_modules}."
+                            f" Please verify that the loaded LoRA module "
+                            f"is correct")
+                    # Load tensors if there are only expected modules.
+                    for module in f.keys():  # noqa
+                        tensors[module] = f.get_tensor(module)
         elif os.path.isfile(lora_bin_file_path):
             # When a bin file is provided, we rely on config to find unexpected
             # modules.
