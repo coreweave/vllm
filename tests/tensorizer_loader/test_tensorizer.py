@@ -365,6 +365,9 @@ def test_serialize_and_deserialize_lora(tmp_path):
     config_path = os.path.join(sql_lora_files, "adapter_config.json")
     tensors = load_file(tensor_path)
 
+    # TODO: This will not work for non-local saving. Use `open_stream`
+    #  to save this json. Pretty sure there are examples of this
+    #  in the tensorizer repo
     shutil.copy(config_path, tmp_path / "adapter_config.json")
 
     tensorizer_uri = tmp_path / "adapter_model.tensors"
