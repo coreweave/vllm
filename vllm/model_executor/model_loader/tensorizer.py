@@ -65,6 +65,7 @@ class TensorizerConfig:
         # check if the configuration is for a sharded vLLM model
         self._is_sharded = isinstance(self.tensorizer_uri, str) \
             and re.search(r'%0\dd', self.tensorizer_uri) is not None
+        self.tensorizer_dir = self.tensorizer_uri.rpartition("/")[0]
 
     def _construct_tensorizer_args(self) -> "TensorizerArgs":
         tensorizer_args = {

@@ -354,15 +354,7 @@ def test_serialize_lora_model(tmp_path):
     from vllm.lora.request import LoRARequest
     from vllm import LLM, SamplingParams
 
-    EMBEDDING_MODULES = {
-        "embed_tokens": "input_embeddings",
-        "lm_head": "output_embeddings",
-    }
-
-    EMBEDDING_PADDING_MODULES = ["lm_head"]
-
     sql_lora_files = snapshot_download(repo_id="yard1/llama-2-7b-sql-lora-test")
-    device = "cuda"
     tensor_path = os.path.join(sql_lora_files, "adapter_model.safetensors")
     config_path = os.path.join(sql_lora_files, "adapter_config.json")
     tensors = load_file(tensor_path)
@@ -390,10 +382,16 @@ def test_serialize_lora_model(tmp_path):
     ]
 
     lora_path = tmp_path
+    lora_tensorizer_uri = str(tmp_path) + "/model.tensors"
     outputs = loaded_vllm_model.generate(
         prompts,
         sampling_params,
-        lora_request=LoRARequest("sql-lora", 1, lora_path)
+        lora_request=LoRARequest("sql-lora",
+                                 1,
+                                 lora_path,
+                                 tensorizer_config = TensorizerConfig(
+                                     tensorizer_uri = lora_tensorizer_uri,
+                                 ))
     )
 
 
