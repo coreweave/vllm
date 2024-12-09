@@ -351,7 +351,7 @@ def test_vllm_tensorized_model_has_same_outputs(vllm_runner, tmp_path):
         assert outputs == deserialized_outputs
 
 
-def test_serialize_lora_model(tmp_path):
+def test_serialize_and_deserialize_lora_model(tmp_path):
     import shutil
 
     from safetensors.torch import load_file
