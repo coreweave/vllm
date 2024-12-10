@@ -474,6 +474,14 @@ def tensorize_vllm_model(engine_args: EngineArgs,
 
 def tensorize_lora_adapter(lora_path: str,
                            tensorizer_config: TensorizerConfig):
+    """
+    Uses tensorizer to serialize a LoRA adapter. Assumes that the files
+    needed to load a LoRA adapter are a safetensors-format file called
+    adapter_model.safetensors and a json config file called adapter_config.json.
+
+    Serializes the files in the same directory as model tensors located at
+    tensorizer_config.tensorizer_uri.
+    """
     lora_files = snapshot_download(repo_id=lora_path)
 
     # Current LoRA loading logic in
