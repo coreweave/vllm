@@ -474,14 +474,13 @@ def tensorize_vllm_model(engine_args: EngineArgs,
 
 def tensorize_lora_adapter(lora_path: str,
                            tensorizer_config: TensorizerConfig):
-
-    # TODO: Consider if the model tensors are in an initial format
-    #  other than safetensors, such as .pt
-    # TODO: Is there a guarantee the adapter_model and adapter_config
-    #  prefixes are the ones that will always used? Probably allow
-    #  specifying paths for these files
-
     lora_files = snapshot_download(repo_id=lora_path)
+
+    # Current LoRA loading logic in
+    # vllm.lora.models.LoRAModel.from_local_checkpoint assumes that
+    # the tensors and config filenames are adapter_model.safetensors and
+    # adapter_config.json respectively, so this logic makes the same
+    # assumption
     tensor_path = os.path.join(lora_files, "adapter_model.safetensors")
     config_path = os.path.join(lora_files, "adapter_config.json")
     with open(config_path) as f:
