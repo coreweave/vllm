@@ -210,6 +210,8 @@ class LoRAModel(AdapterModel):
         lora_config_path = os.path.join(lora_dir, "adapter_config.json")
         tensorizer_config = kwargs.get('tensorizer_config', None)
         if tensorizer_config:
+            from tensorizer import TensorDeserializer
+            tensorizer_args = tensorizer_config._construct_tensorizer_args()
             lora_tensor_path = os.path.join(tensorizer_config.tensorizer_dir,
                                             "adapter_model.tensors")
         else:
@@ -220,8 +222,17 @@ class LoRAModel(AdapterModel):
             lora_dir, "new_embeddings.safetensors")
         new_embeddings_bin_file_path = os.path.join(lora_dir,
                                                     "new_embeddings.bin")
-        with open(lora_config_path) as f:
-            config = json.load(f)
+
+        if tensorizer_config:
+            from tensorizer.stream_io import open_stream
+            with open_stream(lora_config_path,
+                             mode="rb",
+                             **tensorizer_args.stream_params) as f:
+                config = json.load(f)
+
+        else:
+            with open(lora_config_path) as f:
+                config = json.load(f)
 
         config["vllm_max_position_embeddings"] = max_position_embeddings
         peft_helper = PEFTHelper.from_dict(config)
@@ -235,10 +246,6 @@ class LoRAModel(AdapterModel):
             # the target_modules of the adapter_config.json.
             unexpected_modules = []
             if tensorizer_config:
-                from tensorizer import TensorDeserializer
-
-                tensorizer_args = tensorizer_config._construct_tensorizer_args(
-                )
                 tensors = TensorDeserializer(
                     lora_tensor_path,
                     dtype=tensorizer_config.dtype,
