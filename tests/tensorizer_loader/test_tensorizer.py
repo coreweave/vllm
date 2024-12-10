@@ -11,17 +11,15 @@ import torch
 from huggingface_hub import snapshot_download
 from tensorizer import EncryptionParams
 
-from vllm import SamplingParams
+from vllm import LLM, SamplingParams
 from vllm.engine.arg_utils import EngineArgs
+from vllm.lora.request import LoRARequest
 # yapf conflicts with isort for this docstring
 # yapf: disable
-from vllm.model_executor.model_loader.tensorizer import (TensorizerConfig,
-                                                         TensorSerializer,
-                                                         is_vllm_tensorized,
-                                                         load_with_tensorizer,
-                                                         open_stream,
-                                                         serialize_vllm_model,
-                                                         tensorize_vllm_model)
+from vllm.model_executor.model_loader.tensorizer import (
+    TensorizerConfig, TensorSerializer, is_vllm_tensorized,
+    load_with_tensorizer, open_stream, serialize_vllm_model,
+    tensorize_lora_adapter, tensorize_vllm_model)
 # yapf: enable
 from vllm.utils import import_from_path
 
@@ -347,32 +345,23 @@ def test_vllm_tensorized_model_has_same_outputs(vllm_runner, tmp_path):
 
 
 def test_serialize_and_deserialize_lora(tmp_path):
-    import shutil
 
-    from safetensors.torch import load_file
+    model_ref = "meta-llama/Llama-2-7b-hf"
+    lora_path = "yard1/llama-2-7b-sql-lora-test"
+    model_uri = tmp_path / (model_ref + ".tensors")
+    tensorizer_config = TensorizerConfig(tensorizer_uri=str(model_uri))
+    args = EngineArgs(model=model_ref)
 
-    from vllm import LLM, SamplingParams
-    from vllm.lora.request import LoRARequest
+    tensorize_lora_adapter(lora_path, tensorizer_config)
+    tensorize_vllm_model(args, tensorizer_config)
 
-    sql_lora_files = snapshot_download(
-        repo_id="yard1/llama-2-7b-sql-lora-test")
-    tensor_path = os.path.join(sql_lora_files, "adapter_model.safetensors")
-    config_path = os.path.join(sql_lora_files, "adapter_config.json")
-    tensors = load_file(tensor_path)
+    gc.collect()
+    torch.cuda.empty_cache()
 
-    # TODO: This will not work for non-local saving. Use `open_stream`
-    #  to save this json. Pretty sure there are examples of this
-    #  in the tensorizer repo
-    shutil.copy(config_path, tmp_path / "adapter_config.json")
-
-    tensorizer_uri = tmp_path / "adapter_model.tensors"
-    serializer = TensorSerializer(tensorizer_uri)
-    serializer.write_state_dict(tensors)
-    serializer.close()
-
-    # Now, load it
-
-    loaded_vllm_model = LLM(model="meta-llama/Llama-2-7b-hf", enable_lora=True)
+    loaded_vllm_model = LLM(model="meta-llama/Llama-2-7b-hf",
+                            load_format="tensorizer",
+                            model_loader_extra_config=tensorizer_config,
+                            enable_lora=True)
     sampling_params = SamplingParams(temperature=0,
                                      max_tokens=256,
                                      stop=["[/assistant]"])
@@ -382,13 +371,11 @@ def test_serialize_and_deserialize_lora(tmp_path):
         "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_11 (nationality VARCHAR, elector VARCHAR)\n\n question: When Anchero Pantaleone was the elector what is under nationality? [/user] [assistant]",  # noqa: E501
     ]
 
-    lora_path = tmp_path
-    lora_tensorizer_uri = str(tmp_path) + "/model.tensors"
+    lora_path = tensorizer_config.tensorizer_dir
     loaded_vllm_model.generate(prompts,
                                sampling_params,
                                lora_request=LoRARequest(
                                    "sql-lora",
                                    1,
                                    lora_path,
-                                   tensorizer_config=TensorizerConfig(
-                                       tensorizer_uri=lora_tensorizer_uri, )))
+                                   tensorizer_config=tensorizer_config))
