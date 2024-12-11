@@ -1,6 +1,7 @@
 import argparse
 import dataclasses
 import io
+import json
 import os
 import re
 import time
@@ -9,6 +10,8 @@ from functools import partial
 from typing import BinaryIO, Generator, Optional, Tuple, Type, Union
 
 import torch
+from huggingface_hub import snapshot_download
+from safetensors.torch import load_file
 from torch import nn
 from transformers import PretrainedConfig
 
@@ -65,6 +68,7 @@ class TensorizerConfig:
         # check if the configuration is for a sharded vLLM model
         self._is_sharded = isinstance(self.tensorizer_uri, str) \
             and re.search(r'%0\dd', self.tensorizer_uri) is not None
+        self.tensorizer_dir = self.tensorizer_uri.rpartition("/")[0]
 
     def _construct_tensorizer_args(self) -> "TensorizerArgs":
         tensorizer_args = {
@@ -469,3 +473,43 @@ def tensorize_vllm_model(engine_args: EngineArgs,
             engine.model_executor.driver_worker.model_runner.model,
             tensorizer_config,
         )
+
+
+def tensorize_lora_adapter(lora_path: str,
+                           tensorizer_config: TensorizerConfig):
+    """
+    Uses tensorizer to serialize a LoRA adapter. Assumes that the files
+    needed to load a LoRA adapter are a safetensors-format file called
+    adapter_model.safetensors and a json config file called adapter_config.json.
+
+    Serializes the files in the same directory as model tensors located at
+    tensorizer_config.tensorizer_uri.
+    """
+    lora_files = snapshot_download(repo_id=lora_path)
+
+    # Current LoRA loading logic in
+    # vllm.lora.models.LoRAModel.from_local_checkpoint assumes that
+    # the tensors and config filenames are adapter_model.safetensors and
+    # adapter_config.json respectively, so this logic makes the same
+    # assumption
+    tensor_path = os.path.join(lora_files, "adapter_model.safetensors")
+    config_path = os.path.join(lora_files, "adapter_config.json")
+    with open(config_path) as f:
+        config = json.load(f)
+    tensors = load_file(tensor_path)
+
+    tensorizer_args = tensorizer_config._construct_tensorizer_args()
+
+    with open_stream(f"{tensorizer_config.tensorizer_dir}/adapter_config.json",
+                     mode="wb+",
+                     **tensorizer_args.stream_params) as f:
+
+        f.write(json.dumps(config).encode("utf-8"))
+
+    lora_uri = (f"{tensorizer_config.tensorizer_dir}"
+                f"/adapter_model.tensors")
+    with open_stream(lora_uri, mode="wb+",
+                     **tensorizer_args.stream_params) as f:
+        serializer = TensorSerializer(f)
+        serializer.write_state_dict(tensors)
+        serializer.close()

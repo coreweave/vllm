@@ -11,17 +11,15 @@ import torch
 from huggingface_hub import snapshot_download
 from tensorizer import EncryptionParams
 
-from vllm import SamplingParams
+from vllm import LLM, SamplingParams
 from vllm.engine.arg_utils import EngineArgs
+from vllm.lora.request import LoRARequest
 # yapf conflicts with isort for this docstring
 # yapf: disable
-from vllm.model_executor.model_loader.tensorizer import (TensorizerConfig,
-                                                         TensorSerializer,
-                                                         is_vllm_tensorized,
-                                                         load_with_tensorizer,
-                                                         open_stream,
-                                                         serialize_vllm_model,
-                                                         tensorize_vllm_model)
+from vllm.model_executor.model_loader.tensorizer import (
+    TensorizerConfig, TensorSerializer, is_vllm_tensorized,
+    load_with_tensorizer, open_stream, serialize_vllm_model,
+    tensorize_lora_adapter, tensorize_vllm_model)
 # yapf: enable
 from vllm.utils import import_from_path
 
@@ -344,3 +342,40 @@ def test_vllm_tensorized_model_has_same_outputs(vllm_runner, tmp_path):
         # noqa: E501
 
         assert outputs == deserialized_outputs
+
+
+def test_serialize_and_deserialize_lora(tmp_path):
+
+    model_ref = "meta-llama/Llama-2-7b-hf"
+    lora_path = "yard1/llama-2-7b-sql-lora-test"
+    model_uri = tmp_path / (model_ref + ".tensors")
+    tensorizer_config = TensorizerConfig(tensorizer_uri=str(model_uri))
+    args = EngineArgs(model=model_ref)
+
+    tensorize_lora_adapter(lora_path, tensorizer_config)
+    tensorize_vllm_model(args, tensorizer_config)
+
+    gc.collect()
+    torch.cuda.empty_cache()
+
+    loaded_vllm_model = LLM(model="meta-llama/Llama-2-7b-hf",
+                            load_format="tensorizer",
+                            model_loader_extra_config=tensorizer_config,
+                            enable_lora=True)
+    sampling_params = SamplingParams(temperature=0,
+                                     max_tokens=256,
+                                     stop=["[/assistant]"])
+
+    prompts = [
+        "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_74 (icao VARCHAR, airport VARCHAR)\n\n question: Name the ICAO for lilongwe international airport [/user] [assistant]",  # noqa: E501
+        "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_11 (nationality VARCHAR, elector VARCHAR)\n\n question: When Anchero Pantaleone was the elector what is under nationality? [/user] [assistant]",  # noqa: E501
+    ]
+
+    lora_path = tensorizer_config.tensorizer_dir
+    loaded_vllm_model.generate(prompts,
+                               sampling_params,
+                               lora_request=LoRARequest(
+                                   "sql-lora",
+                                   1,
+                                   lora_path,
+                                   tensorizer_config=tensorizer_config))

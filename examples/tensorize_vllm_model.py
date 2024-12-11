@@ -6,9 +6,9 @@ import uuid
 
 from vllm import LLM
 from vllm.engine.arg_utils import EngineArgs
-from vllm.model_executor.model_loader.tensorizer import (TensorizerArgs,
-                                                         TensorizerConfig,
-                                                         tensorize_vllm_model)
+from vllm.model_executor.model_loader.tensorizer import (
+    TensorizerArgs, TensorizerConfig, tensorize_lora_adapter,
+    tensorize_vllm_model)
 from vllm.utils import FlexibleArgumentParser
 
 # yapf conflicts with isort for this docstring
@@ -105,6 +105,17 @@ def parse_args():
         "also supported, although libsodium must be installed to "
         "use it.")
     parser = EngineArgs.add_cli_args(parser)
+
+    parser.add_argument(
+        "--lora-path",
+        type=str,
+        required=False,
+        help="Path to a LoRA adapter to "
+        "serialize along with model tensors. This can then be deserialized "
+        "along with the model by passing a tensorizer_config kwarg to "
+        "LoRARequest with type TensorizerConfig."
+    )
+
     subparsers = parser.add_subparsers(dest='command')
 
     serialize_parser = subparsers.add_parser(
@@ -167,11 +178,44 @@ def parse_args():
 
 
 def deserialize():
-    llm = LLM(model=args.model,
-              load_format="tensorizer",
-              tensor_parallel_size=args.tensor_parallel_size,
-              model_loader_extra_config=tensorizer_config
-    )
+    if args.lora_path:
+        from vllm import SamplingParams
+        from vllm.lora.request import LoRARequest
+
+        llm = LLM(model=args.model,
+                  load_format="tensorizer",
+                  tensor_parallel_size=args.tensor_parallel_size,
+                  model_loader_extra_config=tensorizer_config,
+                  enable_lora=True
+        )
+        sampling_params = SamplingParams(
+            temperature=0,
+            max_tokens=256,
+            stop=["[/assistant]"]
+        )
+
+        # Truncating this as the extra text isn't necessary
+        prompts = [
+            "[user] Write a SQL query to answer the question based on ..."
+        ]
+
+        # Test LoRA load
+        print(
+            llm.generate(
+            prompts,
+            sampling_params,
+            lora_request=LoRARequest("sql-lora",
+                                     1,
+                                     lora_path,
+                                     tensorizer_config = tensorizer_config)
+            )
+        )
+    else:
+        llm = LLM(model=args.model,
+                  load_format="tensorizer",
+                  tensor_parallel_size=args.tensor_parallel_size,
+                  model_loader_extra_config=tensorizer_config
+        )
     return llm
 
 
@@ -184,6 +228,8 @@ if __name__ == '__main__':
                             or os.environ.get("S3_SECRET_ACCESS_KEY", None))
     s3_endpoint = (getattr(args, 's3_endpoint', None)
                 or os.environ.get("S3_ENDPOINT_URL", None))
+
+    lora_path = args.lora_path
 
     credentials = {
         "s3_access_key_id": s3_access_key_id,
@@ -221,10 +267,15 @@ if __name__ == '__main__':
         else:
             model_path = f"{base_path}/model.tensors"
 
+        os.makedirs(base_path, exist_ok=True)
+
         tensorizer_config = TensorizerConfig(
             tensorizer_uri=model_path,
             encryption_keyfile=keyfile,
             **credentials)
+
+        if lora_path:
+            tensorize_lora_adapter(lora_path, tensorizer_config)
 
         tensorize_vllm_model(engine_args, tensorizer_config)
 
