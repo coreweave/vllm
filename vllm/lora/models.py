@@ -221,6 +221,7 @@ class LoRAModel(AdapterModel):
         new_embeddings_bin_file_path = os.path.join(lora_dir,
                                                     "new_embeddings.bin")
 
+        # TODO: This is broken due to an API change from vLLM
         if tensorizer_config:
             from tensorizer.stream_io import open_stream
             with open_stream(lora_config_path,
