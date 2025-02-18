@@ -210,6 +210,8 @@ class LoRAModel(AdapterModel):
             Loaded LoRA Model.
         """
 
+        # TODO: This likely needs a better conditional here, due to the
+        #  careful nature of parsing env vars (supporting 'y', 'yes' 'Y' 'on' etc)
         if os.getenv("USE_TENSORIZER_LORA") == "1":
             lora_tensor_path = os.path.join(lora_dir, "adapter_model.tensors")
         else:
