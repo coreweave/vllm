@@ -224,16 +224,7 @@ class LoRAModel(AdapterModel):
                                                     "new_embeddings.bin")
 
         # TODO: This is broken due to an API change from vLLM
-        if tensorizer_config:
-            from tensorizer.stream_io import open_stream
-            with open_stream(lora_config_path,
-                             mode="rb",
-                             **tensorizer_args.stream_params) as f:
-                config = json.load(f)
-
-        else:
-            with open(lora_config_path) as f:
-                config = json.load(f)
+        tensorizer_config = kwargs.get("tensorizer_config")
 
         unexpected_modules: List[Union[list[str], str]]
         if os.path.isfile(lora_tensor_path):
@@ -246,6 +237,8 @@ class LoRAModel(AdapterModel):
             # the target_modules of the adapter_config.json.
             unexpected_modules = []
             if tensorizer_config:
+                from tensorizer import TensorDeserializer
+                tensorizer_args = tensorizer_config._construct_tensorizer_args()
                 tensors = TensorDeserializer(
                     lora_tensor_path,
                     dtype=tensorizer_config.dtype,
