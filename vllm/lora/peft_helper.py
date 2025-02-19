@@ -97,6 +97,8 @@ class PEFTHelper:
         if tensorizer_config := kwargs.get("tensorizer_config"):
             tensorizer_args = tensorizer_config._construct_tensorizer_args()
             from tensorizer.stream_io import open_stream
+            lora_config_path = os.path.join(tensorizer_config.tensorizer_dir,
+                                                "adapter_config.json")
             with open_stream(lora_config_path,
                              mode="rb",
                              **tensorizer_args.stream_params) as f:

@@ -231,7 +231,7 @@ class LoRAModel(AdapterModel):
             if tensorizer_config:
                 # TODO: Would it be smarter to conditionally
                 from tensorizer import TensorDeserializer
-                lora_tensor_path = os.path.join(lora_dir,
+                lora_tensor_path = os.path.join(tensorizer_config.tensorizer_dir,
                                                 "adapter_model.tensors")
                 tensorizer_args = tensorizer_config._construct_tensorizer_args()
                 tensors = TensorDeserializer(
