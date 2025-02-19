@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+
 import json
 import tempfile
 import weakref
@@ -109,5 +111,4 @@ def test_confirm_deserialize_and_serve(tmp_dir, tensorize_model_and_lora):
                                           1,
                                           tmp_dir.name,
                                           tensorizer_config=TensorizerConfig(
-                                              tensorizer_uri=tmp_dir.name +
-                                              "/adapter_model.tensors")))
+                                              tensorizer_uri=model_uri)))

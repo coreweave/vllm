@@ -216,10 +216,22 @@ class LoRAModel(AdapterModel):
         new_embeddings_bin_file_path = os.path.join(lora_dir,
                                                     "new_embeddings.bin")
 
-        tensorizer_config = kwargs.get("tensorizer_config")
+        tensorizer_config = kwargs.get("tensorizer_config", None)
 
         unexpected_modules: List[Union[list[str], str]]
-        if os.path.isfile(lora_tensor_path):
+
+        if tensorizer_config:
+            from tensorizer import TensorDeserializer
+            lora_tensor_path = os.path.join(tensorizer_config.tensorizer_dir,
+                                            "adapter_model.tensors")
+            tensorizer_args = tensorizer_config._construct_tensorizer_args()
+            tensors = TensorDeserializer(
+                lora_tensor_path,
+                dtype=tensorizer_config.dtype,
+                device=f'cuda:{torch.cuda.current_device()}',
+                **tensorizer_args.deserializer_params)
+
+        elif os.path.isfile(lora_tensor_path):
             tensors: Dict[str, torch.Tensor] = {}
             # Find unexpected modules.
             # Use safetensor key as a source of truth to find expected modules.
@@ -228,37 +240,24 @@ class LoRAModel(AdapterModel):
             # loraified. C won’t exist in the safetensor but it will exist in
             # the target_modules of the adapter_config.json.
             unexpected_modules = []
-            if tensorizer_config:
-                # TODO: Would it be smarter to conditionally
-                from tensorizer import TensorDeserializer
-                lora_tensor_path = os.path.join(tensorizer_config.tensorizer_dir,
-                                                "adapter_model.tensors")
-                tensorizer_args = tensorizer_config._construct_tensorizer_args()
-                tensors = TensorDeserializer(
-                    lora_tensor_path,
-                    dtype=tensorizer_config.dtype,
-                    device=f'cuda:{torch.cuda.current_device()}',
-                    **tensorizer_args.deserializer_params)
-
-            else:
-                with safetensors.safe_open(
-                        lora_tensor_path, framework="pt") as f:  # type: ignore
-                    for lora_module in f.keys():  # noqa
-                        module_name, _, _ = parse_fine_tuned_lora_name(
-                            lora_module, weights_mapper)
-                        part_name = module_name.split(".")[-1]
-                        if part_name not in expected_lora_modules:
-                            unexpected_modules.append(module_name)
-                    if unexpected_modules:
-                        raise ValueError(
-                            f"While loading {lora_dir}, expected"
-                            f" target modules in {expected_lora_modules}"
-                            f" but received {unexpected_modules}."
-                            f" Please verify that the loaded LoRA module "
-                            f"is correct")
-                    # Load tensors if there are only expected modules.
-                    for module in f.keys():  # noqa
-                        tensors[module] = f.get_tensor(module)
+            with safetensors.safe_open(
+                    lora_tensor_path, framework="pt") as f:  # type: ignore
+                for lora_module in f.keys():  # noqa
+                    module_name, _, _ = parse_fine_tuned_lora_name(
+                        lora_module, weights_mapper)
+                    part_name = module_name.split(".")[-1]
+                    if part_name not in expected_lora_modules:
+                        unexpected_modules.append(module_name)
+                if unexpected_modules:
+                    raise ValueError(
+                        f"While loading {lora_dir}, expected"
+                        f" target modules in {expected_lora_modules}"
+                        f" but received {unexpected_modules}."
+                        f" Please verify that the loaded LoRA module "
+                        f"is correct")
+                # Load tensors if there are only expected modules.
+                for module in f.keys():  # noqa
+                    tensors[module] = f.get_tensor(module)
         elif os.path.isfile(lora_bin_file_path):
             # When a bin file is provided, we rely on config to find unexpected
             # modules.
