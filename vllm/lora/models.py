@@ -210,20 +210,13 @@ class LoRAModel(AdapterModel):
             Loaded LoRA Model.
         """
 
-        # TODO: This likely needs a better conditional here, due to the
-        #  careful nature of parsing env vars (supporting 'y', 'yes' 'Y' 'on' etc)
-        if os.getenv("USE_TENSORIZER_LORA") == "1":
-            lora_tensor_path = os.path.join(lora_dir, "adapter_model.tensors")
-        else:
-            lora_tensor_path = os.path.join(lora_dir,
-                                            "adapter_model.safetensors")
+        lora_tensor_path = os.path.join(lora_dir, "adapter_model.safetensors")
         lora_bin_file_path = os.path.join(lora_dir, "adapter_model.bin")
         new_embeddings_tensor_path = os.path.join(
             lora_dir, "new_embeddings.safetensors")
         new_embeddings_bin_file_path = os.path.join(lora_dir,
                                                     "new_embeddings.bin")
 
-        # TODO: This is broken due to an API change from vLLM
         tensorizer_config = kwargs.get("tensorizer_config")
 
         unexpected_modules: List[Union[list[str], str]]
@@ -237,7 +230,10 @@ class LoRAModel(AdapterModel):
             # the target_modules of the adapter_config.json.
             unexpected_modules = []
             if tensorizer_config:
+                # TODO: Would it be smarter to conditionally
                 from tensorizer import TensorDeserializer
+                lora_tensor_path = os.path.join(lora_dir,
+                                                "adapter_model.tensors")
                 tensorizer_args = tensorizer_config._construct_tensorizer_args()
                 tensors = TensorDeserializer(
                     lora_tensor_path,
