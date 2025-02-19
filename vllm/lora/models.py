@@ -209,7 +209,6 @@ class LoRAModel(AdapterModel):
         Returns:
             Loaded LoRA Model.
         """
-
         lora_tensor_path = os.path.join(lora_dir, "adapter_model.safetensors")
         lora_bin_file_path = os.path.join(lora_dir, "adapter_model.bin")
         new_embeddings_tensor_path = os.path.join(
