@@ -43,8 +43,9 @@ def model_uri(tmp_dir):
 
 
 @pytest.fixture(scope="module")
-def tensorize_model_and_lora(model_uri):
-    tensorizer_config = TensorizerConfig(tensorizer_uri=model_uri)
+def tensorize_model_and_lora(tmp_dir, model_uri):
+    tensorizer_config = TensorizerConfig(tensorizer_uri=model_uri,
+                                         lora_dir=tmp_dir)
     args = EngineArgs(model=MODEL_NAME)
 
     tensorize_lora_adapter(LORA_PATH, tensorizer_config)
@@ -98,11 +99,11 @@ async def test_single_completion(client: openai.AsyncOpenAI, model_name: str):
 
 def test_confirm_deserialize_and_serve(model_uri, tmp_dir,
                                        tensorize_model_and_lora):
-    llm = LLM(
-        MODEL_NAME,
-        load_format="tensorizer",
-        model_loader_extra_config=TensorizerConfig(tensorizer_uri=model_uri),
-        enable_lora=True)
+    tc = TensorizerConfig(tensorizer_uri=model_uri, lora_dir=tmp_dir)
+    llm = LLM(MODEL_NAME,
+              load_format="tensorizer",
+              model_loader_extra_config=tc,
+              enable_lora=True)
 
     sampling_params = SamplingParams(temperature=0,
                                      max_tokens=256,
@@ -118,5 +119,4 @@ def test_confirm_deserialize_and_serve(model_uri, tmp_dir,
                  lora_request=LoRARequest("sql-lora",
                                           1,
                                           tmp_dir,
-                                          tensorizer_config=TensorizerConfig(
-                                              tensorizer_uri=model_uri)))
+                                          tensorizer_config=tc))

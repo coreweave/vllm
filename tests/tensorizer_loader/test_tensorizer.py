@@ -355,6 +355,7 @@ def test_serialize_and_deserialize_lora(tmp_path):
     lora_path = "yard1/llama-2-7b-sql-lora-test"
     model_uri = tmp_path / (model_ref + ".tensors")
     tensorizer_config = TensorizerConfig(tensorizer_uri=str(model_uri))
+    tensorizer_config.lora_dir = tensorizer_config.tensorizer_dir
     args = EngineArgs(model=model_ref)
 
     tensorize_lora_adapter(lora_path, tensorizer_config)
@@ -376,7 +377,6 @@ def test_serialize_and_deserialize_lora(tmp_path):
         "[user] Write a SQL query to answer the question based on the table schema.\n\n context: CREATE TABLE table_name_11 (nationality VARCHAR, elector VARCHAR)\n\n question: When Anchero Pantaleone was the elector what is under nationality? [/user] [assistant]",  # noqa: E501
     ]
 
-    lora_path = tensorizer_config.tensorizer_dir
     loaded_vllm_model.generate(prompts,
                                sampling_params,
                                lora_request=LoRARequest(

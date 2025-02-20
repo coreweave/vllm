@@ -89,20 +89,24 @@ class PEFTHelper:
         return cls(**filtered_dict)
 
     @classmethod
-    def from_local_dir(cls, lora_path: str,
-                       max_position_embeddings: Optional[int],
-                       tensorizer_config: Optional["TensorizerConfig"]) -> "PEFTHelper":
+    def from_local_dir(
+            cls, lora_path: str, max_position_embeddings: Optional[int],
+            tensorizer_config: Optional["TensorizerConfig"]) -> "PEFTHelper":
         lora_config_path = os.path.join(lora_path, "adapter_config.json")
 
         if tensorizer_config:
             tensorizer_args = tensorizer_config._construct_tensorizer_args()
             from tensorizer.stream_io import open_stream
-            lora_config_path = os.path.join(tensorizer_config.tensorizer_dir,
+            lora_config_path = os.path.join(tensorizer_config.lora_dir,
                                             "adapter_config.json")
             with open_stream(lora_config_path,
                              mode="rb",
                              **tensorizer_args.stream_params) as f:
                 config = json.load(f)
+
+            logger.info(
+                f"Successfully deserialized LoRA config from {tensorizer_config.lora_dir}"
+            )
 
         else:
             with open(lora_config_path) as f:
