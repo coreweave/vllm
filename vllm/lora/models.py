@@ -228,7 +228,6 @@ class LoRAModel(AdapterModel):
             tensors = TensorDeserializer(
                 lora_tensor_path,
                 dtype=tensorizer_config.dtype,
-                device=f'cuda:{torch.cuda.current_device()}',
                 **tensorizer_args.deserializer_params)
 
         elif os.path.isfile(lora_tensor_path):
@@ -252,8 +251,8 @@ class LoRAModel(AdapterModel):
                         f"While loading {lora_dir}, expected"
                         f" target modules in {expected_lora_modules}"
                         f" but received {unexpected_modules}."
-                        f" Please verify that the loaded LoRA module "
-                        f"is correct")
+                        f" Please verify that the loaded LoRA module is correct"
+                    )
                 # Load tensors if there are only expected modules.
                 for module in f.keys():  # noqa
                     tensors[module] = f.get_tensor(module)

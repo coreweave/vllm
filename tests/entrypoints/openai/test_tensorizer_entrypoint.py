@@ -23,23 +23,15 @@ LORA_PATH = "yard1/llama-2-7b-sql-lora-test"
 
 @pytest.fixture(scope="module")
 def tmp_dir():
-    tmp_dir = tempfile.TemporaryDirectory()
-
-    def cleanup():
-        tmp_dir.cleanup()
-
-    weakref.finalize(tmp_dir, cleanup)
-
-    yield tmp_dir
-
-    cleanup()
+    with tempfile.TemporaryDirectory() as path:
+        yield path
 
 
 @pytest.fixture(scope="module")
 def tensorize_model_and_lora(tmp_dir):
     model_uri = tmp_dir.name + "/model.tensors"
     tensorizer_config = TensorizerConfig(tensorizer_uri=model_uri)
-    args = EngineArgs(model=MODEL_NAME, )
+    args = EngineArgs(model=MODEL_NAME)
 
     tensorize_lora_adapter(LORA_PATH, tensorizer_config)
     tensorize_vllm_model(args, tensorizer_config)
