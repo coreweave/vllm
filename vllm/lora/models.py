@@ -37,9 +37,6 @@ logger = init_logger(__name__)
 
 _GLOBAL_LORA_ID = 0
 
-# TODO: Update docstrings for where `tensorizer_config` hooks are slotted in
-
-
 @dataclass
 class LongContextLoRAContext:
     """Context for lora adapters that support long context."""
@@ -208,6 +205,9 @@ class LoRAModel(AdapterModel):
                 a global counter.
             device: Device where the lora model is loaded.
             dtype: dtype of the lora model weights.
+            tensorizer_config: A TensorizerConfig object that, if provided,
+                can be used to load a serialized LoRAModel residing in
+                the lora_dir attribute of TensorizerConfig.
 
         Returns:
             Loaded LoRA Model.
@@ -218,8 +218,6 @@ class LoRAModel(AdapterModel):
             lora_dir, "new_embeddings.safetensors")
         new_embeddings_bin_file_path = os.path.join(lora_dir,
                                                     "new_embeddings.bin")
-
-        tensorizer_config = kwargs.get("tensorizer_config")
 
         unexpected_modules: List[Union[list[str], str]]
         tensors: Dict[str, torch.Tensor] = {}
