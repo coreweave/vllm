@@ -180,18 +180,19 @@ class LoRAModel(AdapterModel):
 
     @classmethod
     def from_local_checkpoint(
-        cls,
-        lora_dir: str,
-        expected_lora_modules: List[str],
-        peft_helper: PEFTHelper,
-        *,
-        lora_model_id: Optional[int] = None,
-        device: str = "cuda",
-        dtype: Optional[torch.dtype] = None,
-        target_embedding_padding: Optional[int] = None,
-        embedding_modules: Optional[Dict[str, str]] = None,
-        embedding_padding_modules: Optional[List[str]] = None,
-        weights_mapper: Optional[WeightsMapper] = None,
+            cls,
+            lora_dir: str,
+            expected_lora_modules: List[str],
+            peft_helper: PEFTHelper,
+            *,
+            lora_model_id: Optional[int] = None,
+            device: str = "cuda",
+            dtype: Optional[torch.dtype] = None,
+            target_embedding_padding: Optional[int] = None,
+            embedding_modules: Optional[Dict[str, str]] = None,
+            embedding_padding_modules: Optional[List[str]] = None,
+            weights_mapper: Optional[WeightsMapper] = None,
+            tensorizer_config: Optional["TensorizerConfig"] = None
     ) -> "LoRAModel":
         """Create a LoRAModel from a local checkpoint.
         
@@ -204,6 +205,9 @@ class LoRAModel(AdapterModel):
                 a global counter.
             device: Device where the lora model is loaded.
             dtype: dtype of the lora model weights.
+            tensorizer_config: A TensorizerConfig object that, if provided,
+                can be used to load a serialized LoRAModel residing in
+                the lora_dir attribute of TensorizerConfig.
 
         Returns:
             Loaded LoRA Model.
@@ -216,8 +220,20 @@ class LoRAModel(AdapterModel):
                                                     "new_embeddings.bin")
 
         unexpected_modules: List[Union[list[str], str]]
-        if os.path.isfile(lora_tensor_path):
-            tensors: Dict[str, torch.Tensor] = {}
+        tensors: Dict[str, torch.Tensor] = {}
+        if tensorizer_config:
+            from tensorizer import TensorDeserializer
+            lora_tensor_path = os.path.join(tensorizer_config.lora_dir,
+                                            "adapter_model.tensors")
+            tensorizer_args = tensorizer_config._construct_tensorizer_args()
+            tensors = TensorDeserializer(lora_tensor_path,
+                                         dtype=tensorizer_config.dtype,
+                                         **tensorizer_args.deserializer_params)
+            logger.info(
+                f"Successfully deserialized LoRA tensors from {tensorizer_config.lora_dir}"
+            )
+
+        elif os.path.isfile(lora_tensor_path):
             # Find unexpected modules.
             # Use safetensor key as a source of truth to find expected modules.
             # in peft if you have target_modules A, B, C and C does not exist

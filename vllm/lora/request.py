@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
+import typing
 import warnings
 from typing import Optional
 
 import msgspec
 
 from vllm.adapter_commons.request import AdapterRequest
+
+if typing.TYPE_CHECKING:
+    from vllm.model_executor.model_loader.tensorizer import TensorizerConfig
 
 
 class LoRARequest(
@@ -31,6 +35,8 @@ class LoRARequest(
     lora_local_path: Optional[str] = msgspec.field(default=None)
     long_lora_max_len: Optional[int] = None
     base_model_name: Optional[str] = msgspec.field(default=None)
+    tensorizer_config: Optional[
+        "TensorizerConfig"] = None  # TODO: Document the usage for this
 
     def __post_init__(self):
         if self.lora_local_path:
