@@ -79,7 +79,8 @@ class TensorizerConfig:
         # check if the configuration is for a sharded vLLM model
         self._is_sharded = isinstance(self.tensorizer_uri, str) \
             and re.search(r'%0\dd', self.tensorizer_uri) is not None
-        self.tensorizer_dir = self.tensorizer_uri.rpartition("/")[0]
+        self.tensorizer_dir = self.tensorizer_uri.rpartition("/")[
+            0]  # TODO: use os.path.dirname
 
     def _construct_tensorizer_args(self) -> "TensorizerArgs":
         tensorizer_args = {
@@ -493,7 +494,9 @@ def tensorize_lora_adapter(lora_path: str,
     config_path = os.path.join(lora_files, "adapter_config.json")
     with open(config_path) as f:
         config = json.load(f)
-    tensors = load_file(tensor_path)
+    tensors = load_file(
+        tensor_path
+    )  # TODO: make this safetensors.torch.load_file() for clarity
 
     tensorizer_args = tensorizer_config._construct_tensorizer_args()
 

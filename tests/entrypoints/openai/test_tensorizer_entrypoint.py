@@ -2,7 +2,6 @@
 
 import json
 import tempfile
-import weakref
 
 import openai
 import pytest
@@ -19,6 +18,9 @@ from ...utils import RemoteOpenAIServer
 
 MODEL_NAME = "meta-llama/Llama-2-7b-hf"
 LORA_PATH = "yard1/llama-2-7b-sql-lora-test"
+
+# TODO: The frequent need to fetch the model_uri by doing
+#  `foo = tmp_dir.name + bar` means this should be its own fixture
 
 
 @pytest.fixture(scope="module")

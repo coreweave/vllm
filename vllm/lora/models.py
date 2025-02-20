@@ -37,6 +37,8 @@ logger = init_logger(__name__)
 
 _GLOBAL_LORA_ID = 0
 
+# TODO: Update docstrings for where `tensorizer_config` hooks are slotted in
+
 
 @dataclass
 class LongContextLoRAContext:
@@ -225,10 +227,9 @@ class LoRAModel(AdapterModel):
             lora_tensor_path = os.path.join(tensorizer_config.tensorizer_dir,
                                             "adapter_model.tensors")
             tensorizer_args = tensorizer_config._construct_tensorizer_args()
-            tensors = TensorDeserializer(
-                lora_tensor_path,
-                dtype=tensorizer_config.dtype,
-                **tensorizer_args.deserializer_params)
+            tensors = TensorDeserializer(lora_tensor_path,
+                                         dtype=tensorizer_config.dtype,
+                                         **tensorizer_args.deserializer_params)
 
         elif os.path.isfile(lora_tensor_path):
             # Find unexpected modules.

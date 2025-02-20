@@ -6,8 +6,9 @@ import json
 import os
 import uuid
 
-from vllm import LLM
+from vllm import LLM, SamplingParams
 from vllm.engine.arg_utils import EngineArgs
+from vllm.lora.request import LoRARequest
 from vllm.model_executor.model_loader.tensorizer import (
     TensorizerArgs, TensorizerConfig, tensorize_lora_adapter,
     tensorize_vllm_model)
@@ -108,6 +109,9 @@ def parse_args():
         "use it.")
     parser = EngineArgs.add_cli_args(parser)
 
+    # TODO: Provide example code for its usage here, both for invoking
+    #  this is in the context of this script, and using LoRA with tensorizer
+    #  generally.
     parser.add_argument(
         "--lora-path",
         type=str,
@@ -181,8 +185,6 @@ def parse_args():
 
 def deserialize():
     if args.lora_path:
-        from vllm import SamplingParams
-        from vllm.lora.request import LoRARequest
 
         llm = LLM(model=args.model,
                   load_format="tensorizer",
