@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
+import gc
 import json
 import tempfile
 
@@ -19,31 +20,44 @@ from ...utils import RemoteOpenAIServer
 MODEL_NAME = "meta-llama/Llama-2-7b-hf"
 LORA_PATH = "yard1/llama-2-7b-sql-lora-test"
 
-# TODO: The frequent need to fetch the model_uri by doing
-#  `foo = tmp_dir.name + bar` means this should be its own fixture
+
+def _cleanup():
+    gc.collect()
+    torch.cuda.empty_cache()
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture(autouse=True)
+def cleanup():
+    _cleanup()
+
+
+@pytest.fixture(scope='module')
 def tmp_dir():
     with tempfile.TemporaryDirectory() as path:
         yield path
 
 
+@pytest.fixture(scope='module')
+def model_uri(tmp_dir):
+    yield f"{tmp_dir}/model.tensors"
+
+
 @pytest.fixture(scope="module")
-def tensorize_model_and_lora(tmp_dir):
-    model_uri = tmp_dir.name + "/model.tensors"
+def tensorize_model_and_lora(model_uri):
     tensorizer_config = TensorizerConfig(tensorizer_uri=model_uri)
     args = EngineArgs(model=MODEL_NAME)
 
     tensorize_lora_adapter(LORA_PATH, tensorizer_config)
     tensorize_vllm_model(args, tensorizer_config)
 
-    torch.cuda.empty_cache()
+    # Manually invoke a _cleanup() here, as the cleanup()
+    # fixture won't be guaranteed to be called after this
+    # when this fixture is used for a test
+    _cleanup()
 
 
 @pytest.fixture(scope="module")
-def server(tmp_dir, tensorize_model_and_lora):
-    model_uri = tmp_dir.name + "/model.tensors"
+def server(model_uri, tensorize_model_and_lora):
     model_loader_extra_config = {
         "tensorizer_uri": model_uri,
     }
@@ -82,8 +96,8 @@ async def test_single_completion(client: openai.AsyncOpenAI, model_name: str):
         completion_tokens=5, prompt_tokens=6, total_tokens=11)
 
 
-def test_confirm_deserialize_and_serve(tmp_dir, tensorize_model_and_lora):
-    model_uri = tmp_dir.name + "/model.tensors"
+def test_confirm_deserialize_and_serve(model_uri, tmp_dir,
+                                       tensorize_model_and_lora):
     llm = LLM(
         MODEL_NAME,
         load_format="tensorizer",
@@ -103,6 +117,6 @@ def test_confirm_deserialize_and_serve(tmp_dir, tensorize_model_and_lora):
                  sampling_params,
                  lora_request=LoRARequest("sql-lora",
                                           1,
-                                          tmp_dir.name,
+                                          tmp_dir,
                                           tensorizer_config=TensorizerConfig(
                                               tensorizer_uri=model_uri)))
