@@ -195,7 +195,8 @@ class LoRAModel(AdapterModel):
                               embedding_padding_modules: Optional[
                                   List[str]] = None,
                               weights_mapper: Optional[WeightsMapper] = None,
-                              **kwargs) -> "LoRAModel":
+                              tensorizer_config: Optional["TensorizerConfig"] = None
+                              ) -> "LoRAModel":
         """Create a LoRAModel from a local checkpoint.
         
         Args:
