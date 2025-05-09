@@ -3,6 +3,7 @@
 import argparse
 import dataclasses
 import io
+import json
 import os
 import re
 import time
@@ -10,7 +11,9 @@ from dataclasses import dataclass
 from functools import partial
 from typing import BinaryIO, Generator, Optional, Tuple, Type, Union
 
+import safetensors
 import torch
+from huggingface_hub import snapshot_download
 from torch import nn
 from transformers import PretrainedConfig
 
@@ -20,7 +23,8 @@ from vllm.engine.arg_utils import EngineArgs
 from vllm.engine.llm_engine import LLMEngine
 from vllm.logger import init_logger
 from vllm.model_executor.layers.vocab_parallel_embedding import (
-    VocabParallelEmbedding)
+    VocabParallelEmbedding
+)
 from vllm.utils import FlexibleArgumentParser, PlaceholderModule
 
 try:
@@ -467,6 +471,10 @@ def tensorize_vllm_model(engine_args: EngineArgs,
         ) as stream:
             stream.write(encryption_params.key)
 
+    if not envs.VLLM_USE_V1:
+        raise RuntimeError(
+            "VLLM_USE_V1=0 must be set for Tensorizer serialization"
+        )
     engine = LLMEngine.from_engine_args(engine_args)
     engine.model_executor.collective_rpc(
         "save_tensorized_model",
