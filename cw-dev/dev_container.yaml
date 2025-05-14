@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${APP_NAME}
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${APP_NAME}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${APP_NAME}
+    spec:
+      containers:
+        - name: setup-container
+          image: "public.ecr.aws/q9t5s3a7/vllm-ci-test-repo:${VLLM_CI_BUILD_COMMIT}"
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-secret
+                  key: token
+          workingDir: /vllm-workspace
+          command:
+            - "/bin/sh"
+            - "-c"
+            - |
+              ## Note that this Python version may or may not be appropriate
+              apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server git python3.9 python3-pip git rsync
+              
+              ## Set ssh-mac-pubkey as the authorized key
+              mkdir -p /root/.ssh
+              cp /keys/id_rsa.pub /root/.ssh/authorized_keys
+              
+              # This image doesn't have the vLLM source code in it, but the preinstalled
+              # dependencies are all good, so we'll manually load in the source code.
+              
+              # Make a temporary dir (so we avoid a weird vllm/vllm file tree down the line)
+              mkdir /repo-tmp
+              cd /repo-tmp
+              
+              # Clone vLLM but don't load any file contents yet
+              git clone --filter=blob:none --no-checkout https://github.com/vllm-project/vllm.git
+              cd vllm
+              git sparse-checkout init --no-cone
+              echo "/vllm/*" > .git/info/sparse-checkout
+              git checkout ${VLLM_CI_BUILD_COMMIT}
+              mv vllm $WORKSPACE
+              cd $WORKSPACE
+              
+              echo "Starting SSH server..."
+              ## Start SSH
+              mkdir -p /run/sshd
+              /usr/sbin/sshd -D
+          securityContext:
+            runAsUser: 0
+          volumeMounts:
+            - name: ssh-key
+              mountPath: "/keys"
+              readOnly: true
+          resources:
+            requests:
+              cpu: "32"
+              memory: 128Gi
+              nvidia.com/gpu: "4"
+            limits:
+              cpu: "32"
+              memory: 128Gi
+              nvidia.com/gpu: "4"
+      imagePullSecrets:
+        - name: ghcr-image-secret
+      volumes:
+        - name: ssh-key
+          secret:
+            secretName: ssh-mac-pubkey
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: topology.kubernetes.io/region
+                operator: In
+                values:
+                  - "ORD1"
+              - key: gpu.nvidia.com/class
+                operator: In
+                values:
+                  - "A100_PCIE_80GB"
