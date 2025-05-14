@@ -29,7 +29,7 @@ spec:
             - "-c"
             - |
               ## Note that this Python version may or may not be appropriate
-              apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server git python3.9 python3-pip git rsync
+              apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y openssh-server git python3.9 python3-pip git rsync jq
               
               ## Set ssh-mac-pubkey as the authorized key
               mkdir -p /root/.ssh
