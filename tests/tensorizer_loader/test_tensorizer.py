@@ -9,6 +9,8 @@ import pathlib
 import subprocess
 import sys
 from typing import Any
+import boto3
+import moto
 
 import pytest
 import torch
@@ -101,6 +103,56 @@ def write_keyfile(keyfile_path: str):
     pathlib.Path(keyfile_path).parent.mkdir(parents=True, exist_ok=True)
     with open(keyfile_path, 'wb') as f:
         f.write(encryption_params.key)
+
+
+@pytest.fixture()
+def serialize_to_s3():
+    with moto.mock_aws():
+        model_ref = "facebook/opt-125m"
+        args = EngineArgs(model=model_ref)
+        s3 = boto3.client("s3", region_name="us-east-1")
+        bucket_name = "my-test-bucket"
+        s3.create_bucket(Bucket=bucket_name)
+        buckets = s3.list_buckets()
+        assert any(b["Name"] == bucket_name for b in buckets["Buckets"])
+
+        tensorizer_dir = "s3://my-test-bucket"
+        config_for_serializing = TensorizerConfig(
+            tensorizer_dir=tensorizer_dir
+        )
+        tensorize_vllm_model(args, config_for_serializing)
+        yield tensorizer_dir
+
+
+@pytest.mark.skipif(not is_curl_installed(), reason="cURL is not installed")
+async def test_use_s3(serialize_to_s3):
+    tensorizer_dir = serialize_to_s3
+
+    cmd = [
+        "-m", "vllm.entrypoints.cli.main", "serve", tensorizer_dir, "--host", "localhost",
+        "--load-format", "tensorizer",
+    ]
+
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        *cmd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+
+    assert proc.stdout is not None
+    fut = proc.stdout.readuntil(b"Application startup complete.")
+
+    try:
+        await asyncio.wait_for(fut, 180)
+    except asyncio.TimeoutError:
+        pytest.fail("Server did not start successfully")
+    finally:
+        proc.terminate()
+    await proc.communicate()
+
+
+
 
 
 @pytest.mark.skipif(not is_curl_installed(), reason="cURL is not installed")
