@@ -104,24 +104,42 @@ def write_keyfile(keyfile_path: str):
     with open(keyfile_path, 'wb') as f:
         f.write(encryption_params.key)
 
+@moto.mock_aws
+def test_create_bucket(use_moto):
+    use_moto.start()
+    # Mock AWS credentials
+    os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
+    os.environ["AWS_SESSION_TOKEN"] = "testing"
+
+    # Now interact with S3
+    s3 = boto3.client("s3", region_name="us-east-1")
+    s3.create_bucket(Bucket="my-mocked-bucket")
+
+    response = s3.list_buckets()
+    bucket_names = [bucket["Name"] for bucket in response["Buckets"]]
+    assert "my-mocked-bucket" in bucket_names
+    use_moto.stop()
 
 @pytest.fixture()
-def serialize_to_s3():
-    with moto.mock_aws():
-        model_ref = "facebook/opt-125m"
-        args = EngineArgs(model=model_ref)
-        s3 = boto3.client("s3", region_name="us-east-1")
-        bucket_name = "my-test-bucket"
-        s3.create_bucket(Bucket=bucket_name)
-        buckets = s3.list_buckets()
-        assert any(b["Name"] == bucket_name for b in buckets["Buckets"])
+def serialize_to_s3(use_moto):
+    use_moto.start()
 
-        tensorizer_dir = "s3://my-test-bucket"
-        config_for_serializing = TensorizerConfig(
-            tensorizer_dir=tensorizer_dir
-        )
-        tensorize_vllm_model(args, config_for_serializing)
-        yield tensorizer_dir
+    model_ref = "facebook/opt-125m"
+    args = EngineArgs(model=model_ref)
+    s3 = boto3.client("s3", region_name="us-east-1")
+    bucket_name = "my-test-bucket"
+    s3.create_bucket(Bucket=bucket_name)
+    buckets = s3.list_buckets()
+    assert any(b["Name"] == bucket_name for b in buckets["Buckets"])
+
+    tensorizer_dir = "s3://my-test-bucket"
+    config_for_serializing = TensorizerConfig(
+        tensorizer_dir=tensorizer_dir,
+    )
+    tensorize_vllm_model(args, config_for_serializing)
+    yield tensorizer_dir
+    use_moto.stop()
 
 
 @pytest.mark.skipif(not is_curl_installed(), reason="cURL is not installed")

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 from typing import Callable
-
+import moto
 import pytest
+import os
 
 from vllm import LLM, EngineArgs
 from vllm.distributed import cleanup_dist_env_and_memory
@@ -13,6 +14,46 @@ from vllm.v1.executor.abstract import UniProcExecutor
 from vllm.worker.worker_base import WorkerWrapperBase
 
 MODEL_REF = "facebook/opt-125m"
+
+@pytest.fixture()
+def use_moto():
+
+    # Clear any environment variables that boto3 may attempt to access
+    # to avoid accidentally writing to a real bucket in case of failure
+    old_environment = {
+        key: os.environ[key]
+        for key in (
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_SECURITY_TOKEN",
+            "AWS_SESSION_TOKEN",
+            "AWS_DEFAULT_REGION",
+            "AWS_CONFIG_FILE",
+            "AWS_SHARED_CREDENTIALS_FILE",
+        )
+        if key in os.environ
+    }
+
+    # Disable these two entirely
+    os.environ["AWS_CONFIG_FILE"] = ""
+    os.environ["AWS_SHARED_CREDENTIALS_FILE"] = ""
+    os.environ["AWS_ACCESS_KEY_ID"] = "test"
+    os.environ["AWS_SECRET_ACCESS_KEY"] = "test"
+
+    for key in old_environment:
+        test_value = "us-east-1" if key == "AWS_DEFAULT_REGION" else "TEST"
+        os.environ[key] = test_value
+
+    mock_s3 = moto.mock_aws()
+    #access_key = mock_s3.FAKE_KEYS["AWS_ACCESS_KEY_ID"]
+    #secret_key = mock_s3.FAKE_KEYS["AWS_SECRET_ACCESS_KEY"]
+    yield mock_s3
+    mock_s3.stop()
+
+    del os.environ["AWS_CONFIG_FILE"]
+    del os.environ["AWS_SHARED_CREDENTIALS_FILE"]
+    for key, value in old_environment:
+        os.environ[key] = value
 
 
 @pytest.fixture()
