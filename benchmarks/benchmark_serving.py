@@ -74,6 +74,7 @@ from benchmark_dataset import (
 )
 from benchmark_utils import convert_to_pytorch_benchmark_format, write_to_json
 import weave
+import re
 
 MILLISECONDS_TO_SECONDS_CONVERSION = 1000
 
