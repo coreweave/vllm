@@ -1252,7 +1252,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     server_cmd = os.getenv("SERVER_CMD") or None
     project_name = os.getenv("WEAVE_PROJECT_NAME") or "vllm-benchmark"
-    weave.init()
+    weave.init(project_name)
     if server_cmd is not None:
         d = parse_server_cmd_to_dict(server_cmd)
         with weave.attributes(d):
