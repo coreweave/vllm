@@ -28,6 +28,7 @@ import gc
 import json
 import os
 import random
+import re
 import time
 import warnings
 from collections.abc import Iterable
@@ -74,9 +75,11 @@ from benchmark_dataset import (
 )
 from benchmark_utils import convert_to_pytorch_benchmark_format, write_to_json
 from vllm.benchmarks.serve import get_request
+import weave
 
 MILLISECONDS_TO_SECONDS_CONVERSION = 1000
 
+CLI_ARG_REGEX="--[a-zA-Z-]+[ |=][^ ]+"
 
 @dataclass
 class BenchmarkMetrics:
@@ -107,7 +110,7 @@ class BenchmarkMetrics:
     std_e2el_ms: float
     percentiles_e2el_ms: list[tuple[float, float]]
 
-
+@weave.op()
 def calculate_metrics(
     input_requests: list[SampleRequest],
     outputs: list[RequestFuncOutput],
@@ -225,7 +228,7 @@ def calculate_metrics(
 
     return metrics, actual_output_lens
 
-
+@weave.op()
 async def benchmark(
     backend: str,
     api_url: str,
@@ -519,7 +522,7 @@ async def benchmark(
 
     return result
 
-
+@weave.op()
 def check_goodput_args(args):
     # Check and parse goodput arguments
     goodput_config_dict = {}
@@ -541,7 +544,7 @@ def check_goodput_args(args):
                 )
     return goodput_config_dict
 
-
+@weave.op()
 def parse_goodput(slo_pairs):
     goodput_config_dict = {}
     try:
@@ -557,7 +560,7 @@ def parse_goodput(slo_pairs):
         ) from err
     return goodput_config_dict
 
-
+@weave.op()
 def save_to_pytorch_benchmark_format(
     args: argparse.Namespace, results: dict[str, Any], file_name: str
 ) -> None:
@@ -592,7 +595,7 @@ def save_to_pytorch_benchmark_format(
         pt_file = f"{os.path.splitext(file_name)[0]}.pytorch.json"
         write_to_json(pt_file, pt_records)
 
-
+@weave.op()
 def main(args: argparse.Namespace):
     print(args)
     random.seed(args.seed)
@@ -900,7 +903,7 @@ def main(args: argparse.Namespace):
             json.dump(result_json, outfile)
         save_to_pytorch_benchmark_format(args, result_json, file_name)
 
-
+@weave.op()
 def create_argument_parser():
     parser = FlexibleArgumentParser(
         description="Benchmark the online serving throughput."
@@ -1283,8 +1286,34 @@ def create_argument_parser():
 
     return parser
 
+def parse_cli_arg(cli_arg: str):
+    arg = cli_arg.lstrip("-")
+    return arg.replace("-", "_")
+
+def parse_server_cmd_to_dict(server_cmd: str) -> dict:
+    server_cmd = server_cmd.replace("\n", "")
+    output_dict = {}
+    regex = re.compile(CLI_ARG_REGEX)
+    matches = regex.findall(server_cmd)
+    entrypoint_cmd = regex.split(server_cmd)[0]
+    for match in matches:
+        split = match.split(" ")
+        if len(split) <= 1:
+            split = match.split("=")
+        k, v = split
+        output_dict[parse_cli_arg(k)] = v
+
+    output_dict["entrypoint"] = entrypoint_cmd
+
+    return output_dict
 
 if __name__ == "__main__":
     parser = create_argument_parser()
     args = parser.parse_args()
-    main(args)
+    server_cmd = os.getenv("SERVER_CMD") or None
+    if server_cmd is not None:
+        d = parse_server_cmd_to_dict(server_cmd)
+        with weave.attributes(d):
+            main(args)
+    else:
+        main(args)
