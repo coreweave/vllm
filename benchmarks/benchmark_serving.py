@@ -1251,9 +1251,11 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+    org = os.getenv("WANDB_ENTITY") or None
     server_cmd = os.getenv("SERVER_CMD") or None
-    project_name = os.getenv("WEAVE_PROJECT_NAME") or "vllm-benchmark"
-    weave.init(project_name)
+    project_name = os.getenv("WAND_PROJECT") or "vllm-benchmark"
+    weave_id = f"{org}/{project_name}" if org else project_name
+    weave.init(weave_id)
     if server_cmd is not None:
         d = parse_server_cmd_to_dict(server_cmd)
         with weave.attributes(d):
