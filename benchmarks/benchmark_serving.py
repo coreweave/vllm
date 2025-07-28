@@ -272,6 +272,22 @@ def calculate_metrics(
 
     return metrics, actual_output_lens
 
+COST_PER_NODE_PER_HOUR = 6.50
+
+@weave.op()
+def calculate_cost_per_million_input_tokens(total_input_tokens, num_prompts, mean_ttft_ms, max_concurrency) -> float:
+    f = 1000000 / (total_input_tokens / num_prompts)
+    return mean_ttft_ms / 1000 * (
+                COST_PER_NODE_PER_HOUR / max_concurrency / 3600) * f
+
+
+@weave.op()
+def calculate_cost_per_million_output_tokens(mean_e2el_ms, mean_ttft_ms, total_output_tokens, num_prompts, max_concurrency) -> float:
+    a = (mean_e2el_ms - mean_ttft_ms) / 1000
+    f = 1000000 / (total_output_tokens / num_prompts)
+    return a * (COST_PER_NODE_PER_HOUR / max_concurrency / 3600) * f
+
+
 @weave.op()
 async def benchmark(
     backend: str,
@@ -478,6 +494,19 @@ async def benchmark(
         "itls": [output.itl for output in outputs],
         "generated_texts": [output.generated_text for output in outputs],
         "errors": [output.error for output in outputs],
+        "cost_per_million_input_tokens": calculate_cost_per_million_input_tokens(
+            total_input_tokens=metrics.total_input,
+            num_prompts=len(input_requests),
+            mean_ttft_ms=metrics.mean_ttft_ms,
+            max_concurrency=max_concurrency
+        ),
+        "cost_per_million_output_tokens": calculate_cost_per_million_output_tokens(
+            mean_e2el_ms=metrics.mean_e2el_ms,
+            mean_ttft_ms=metrics.mean_ttft_ms,
+            total_output_tokens=metrics.total_output,
+            num_prompts=len(input_requests),
+            max_concurrency=max_concurrency
+        )
     }
 
     def process_one_metric(
