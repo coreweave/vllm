@@ -272,7 +272,7 @@ def calculate_metrics(
 
     return metrics, actual_output_lens
 
-COST_PER_NODE_PER_HOUR = os.getenv("COST_PER_NODE_PER_HOUR") or 6.50
+COST_PER_NODE_PER_HOUR = float(os.getenv("COST_PER_NODE_PER_HOUR") or 6.50)
 
 @weave.op()
 def calculate_cost_per_million_input_tokens(total_input_tokens, num_prompts, mean_ttft_ms, max_concurrency) -> float:
