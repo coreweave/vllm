@@ -73,8 +73,9 @@ from benchmark_dataset import (
     VisionArenaDataset,
 )
 from benchmark_utils import convert_to_pytorch_benchmark_format, write_to_json
-import weave
+import wandb
 import re
+import pandas as pd
 
 MILLISECONDS_TO_SECONDS_CONVERSION = 1000
 
@@ -109,7 +110,7 @@ class BenchmarkMetrics:
     std_e2el_ms: float
     percentiles_e2el_ms: list[tuple[float, float]]
 
-@weave.op()
+
 async def get_request(
     input_requests: list[SampleRequest],
     request_rate: float,
@@ -272,23 +273,8 @@ def calculate_metrics(
 
     return metrics, actual_output_lens
 
-COST_PER_NODE_PER_HOUR = float(os.getenv("COST_PER_NODE_PER_HOUR") or 6.50)
-
-@weave.op()
-def calculate_cost_per_million_input_tokens(total_input_tokens, num_prompts, mean_ttft_ms, max_concurrency) -> float:
-    f = 1000000 / (total_input_tokens / num_prompts)
-    return mean_ttft_ms / 1000 * (
-                COST_PER_NODE_PER_HOUR / max_concurrency / 3600) * f
 
 
-@weave.op()
-def calculate_cost_per_million_output_tokens(mean_e2el_ms, mean_ttft_ms, total_output_tokens, num_prompts, max_concurrency) -> float:
-    a = (mean_e2el_ms - mean_ttft_ms) / 1000
-    f = 1000000 / (total_output_tokens / num_prompts)
-    return a * (COST_PER_NODE_PER_HOUR / max_concurrency / 3600) * f
-
-
-@weave.op()
 async def benchmark(
     backend: str,
     api_url: str,
@@ -494,21 +480,21 @@ async def benchmark(
         "itls": [output.itl for output in outputs],
         "generated_texts": [output.generated_text for output in outputs],
         "errors": [output.error for output in outputs],
-        "cost_per_million_input_tokens": calculate_cost_per_million_input_tokens(
-            total_input_tokens=metrics.total_input,
-            num_prompts=len(input_requests),
-            mean_ttft_ms=metrics.mean_ttft_ms,
-            max_concurrency=max_concurrency
-        ),
-        "cost_per_million_output_tokens": calculate_cost_per_million_output_tokens(
-            mean_e2el_ms=metrics.mean_e2el_ms,
-            mean_ttft_ms=metrics.mean_ttft_ms,
-            total_output_tokens=metrics.total_output,
-            num_prompts=len(input_requests),
-            max_concurrency=max_concurrency
-        ),
-        "cost_per_node_per_hour": COST_PER_NODE_PER_HOUR
     }
+
+    org = os.getenv("WANDB_ENTITY") or None
+    server_cmd = os.getenv("SERVER_CMD") or None
+    project_name = os.getenv("WANDB_PROJECT") or "vllm-benchmark"
+    wandb_id = f"{org}/{project_name}" if org else project_name
+    run = wandb.init(wandb_id)
+
+    if server_cmd is not None:
+        d = parse_server_cmd_to_dict(server_cmd)
+        result.update(d)
+    as_df = pd.DataFrame(result)
+    table = wandb.Table(dataframe=as_df)
+    run.log({"benchmark": table})
+
 
     def process_one_metric(
         # E.g., "ttft"
@@ -558,7 +544,7 @@ async def benchmark(
 
     return result
 
-@weave.op()
+
 def check_goodput_args(args):
     # Check and parse goodput arguments
     goodput_config_dict = {}
@@ -580,7 +566,7 @@ def check_goodput_args(args):
                 )
     return goodput_config_dict
 
-@weave.op()
+
 def parse_goodput(slo_pairs):
     goodput_config_dict = {}
     try:
@@ -596,7 +582,7 @@ def parse_goodput(slo_pairs):
         ) from err
     return goodput_config_dict
 
-@weave.op()
+
 def save_to_pytorch_benchmark_format(
     args: argparse.Namespace, results: dict[str, Any], file_name: str
 ) -> None:
@@ -631,7 +617,7 @@ def save_to_pytorch_benchmark_format(
         pt_file = f"{os.path.splitext(file_name)[0]}.pytorch.json"
         write_to_json(pt_file, pt_records)
 
-@weave.op()
+
 def main(args: argparse.Namespace):
     print(args)
     random.seed(args.seed)
@@ -1281,14 +1267,4 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    org = os.getenv("WANDB_ENTITY") or None
-    server_cmd = os.getenv("SERVER_CMD") or None
-    project_name = os.getenv("WANDB_PROJECT") or "vllm-benchmark"
-    weave_id = f"{org}/{project_name}" if org else project_name
-    weave.init(weave_id)
-    if server_cmd is not None:
-        d = parse_server_cmd_to_dict(server_cmd)
-        with weave.attributes(d):
-            main(args)
-    else:
-        main(args)
+    main(args)
