@@ -482,11 +482,10 @@ async def benchmark(
         "errors": [output.error for output in outputs],
     }
 
-    org = os.getenv("WANDB_ENTITY") or None
+    entity = os.getenv("WANDB_ENTITY") or None
     server_cmd = os.getenv("SERVER_CMD") or None
     project_name = os.getenv("WANDB_PROJECT") or "vllm-benchmark"
-    wandb_id = f"{org}/{project_name}" if org else project_name
-    run = wandb.init(wandb_id)
+    run = wandb.init(project=project_name, entity=entity)
 
     if server_cmd is not None:
         d = parse_server_cmd_to_dict(server_cmd)
