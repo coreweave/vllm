@@ -482,19 +482,6 @@ async def benchmark(
         "errors": [output.error for output in outputs],
     }
 
-    entity = os.getenv("WANDB_ENTITY") or None
-    server_cmd = os.getenv("SERVER_CMD") or None
-    project_name = os.getenv("WANDB_PROJECT") or "vllm-benchmark"
-    run = wandb.init(project=project_name, entity=entity)
-
-    if server_cmd is not None:
-        d = parse_server_cmd_to_dict(server_cmd)
-        result.update(d)
-    as_df = pd.DataFrame(result)
-    table = wandb.Table(dataframe=as_df)
-    run.log({"benchmark": table})
-
-
     def process_one_metric(
         # E.g., "ttft"
         metric_attribute_name: str,
@@ -581,6 +568,21 @@ def parse_goodput(slo_pairs):
         ) from err
     return goodput_config_dict
 
+def load_saved_json_and_upload_to_wandb_as_table(pt_file):
+    with open(pt_file, "rb") as f:
+        result = json.load(f)
+    entity = os.getenv("WANDB_ENTITY") or None
+    server_cmd = os.getenv("SERVER_CMD") or None
+    project_name = os.getenv("WANDB_PROJECT") or "vllm-benchmark"
+    run = wandb.init(project=project_name, entity=entity)
+
+    if server_cmd is not None:
+        d = parse_server_cmd_to_dict(server_cmd)
+        result.update(d)
+    as_df = pd.DataFrame(result)
+    table = wandb.Table(dataframe=as_df)
+    run.log({"benchmark_results": table})
+
 
 def save_to_pytorch_benchmark_format(
     args: argparse.Namespace, results: dict[str, Any], file_name: str
@@ -615,6 +617,7 @@ def save_to_pytorch_benchmark_format(
         # Don't use json suffix here as we don't want CI to pick it up
         pt_file = f"{os.path.splitext(file_name)[0]}.pytorch.json"
         write_to_json(pt_file, pt_records)
+        load_saved_json_and_upload_to_wandb_as_table(pt_file)
 
 
 def main(args: argparse.Namespace):
