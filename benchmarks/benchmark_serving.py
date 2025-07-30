@@ -617,7 +617,6 @@ def save_to_pytorch_benchmark_format(
         # Don't use json suffix here as we don't want CI to pick it up
         pt_file = f"{os.path.splitext(file_name)[0]}.pytorch.json"
         write_to_json(pt_file, pt_records)
-        load_saved_json_and_upload_to_wandb_as_table(pt_file)
 
 
 def main(args: argparse.Namespace):
@@ -894,6 +893,8 @@ def main(args: argparse.Namespace):
                 outfile.write("\n")
             json.dump(result_json, outfile)
         save_to_pytorch_benchmark_format(args, result_json, file_name)
+        load_saved_json_and_upload_to_wandb_as_table(file_name)
+
 
 
 def parse_cli_arg(cli_arg: str):
