@@ -579,7 +579,7 @@ def load_saved_json_and_upload_to_wandb_as_table(pt_file):
     if server_cmd is not None:
         d = parse_server_cmd_to_dict(server_cmd)
         result.update(d)
-    as_df = pd.DataFrame(result)
+    as_df = pd.DataFrame(result, index=[0])
     table = wandb.Table(dataframe=as_df)
     run.log({"benchmark_results": table})
 
