@@ -910,6 +910,10 @@ def parse_server_cmd_to_dict(server_cmd: str) -> dict:
     for match in matches:
         split = match.split(" ")
         if len(split) <= 1:
+            if "=" not in match:
+                k = match
+                output_dict[parse_cli_arg(k)] = True
+                continue
             split = match.split("=")
         k, v = split
         output_dict[parse_cli_arg(k)] = v
