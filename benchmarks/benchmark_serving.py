@@ -79,7 +79,7 @@ import pandas as pd
 
 MILLISECONDS_TO_SECONDS_CONVERSION = 1000
 
-CLI_ARG_REGEX="--[a-zA-Z-]+[ |=][^ ]+"
+CLI_ARG_REGEX="--[a-zA-Z-]+|--[a-zA-Z-][ |=][^ ]+"
 
 @dataclass
 class BenchmarkMetrics:
