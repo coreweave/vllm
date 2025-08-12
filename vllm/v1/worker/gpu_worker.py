@@ -29,7 +29,7 @@ from vllm.v1.engine import ReconfigureDistributedRequest, ReconfigureRankType
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import EMPTY_MODEL_RUNNER_OUTPUT, ModelRunnerOutput
 from vllm.v1.utils import report_usage_stats
-from vllm.v1.worker.gpu_model_runner import GPUModelRunner
+from vllm.v1.worker.gpu_model_runner import GPUModelRunner, GPUDraftModelRunner
 from vllm.v1.worker.worker_base import WorkerBase
 
 logger = init_logger(__name__)
@@ -171,6 +171,14 @@ class Worker(WorkerBase):
 
             # take current memory snapshot
             self.init_snapshot = MemorySnapshot()
+
+            # If using a draft model, we'll have verifier allocate 80%,
+            # verifier allocate 10%, 10% wiggle room
+            if self.speculative_config:
+                if self.vllm_config.speculative_config.draft_engine is not None:
+                    self.cache_config.gpu_memory_utilization = 0.8
+                else:
+                    self.cache_config.gpu_memory_utilization = 0.1
             self.requested_memory = (self.init_snapshot.total_memory *
                                      self.cache_config.gpu_memory_utilization)
             if self.init_snapshot.free_memory < self.requested_memory:
@@ -195,9 +203,12 @@ class Worker(WorkerBase):
         # Set random seed.
         set_random_seed(self.model_config.seed)
 
-        # Construct the model runner
-        self.model_runner: GPUModelRunner = GPUModelRunner(
-            self.vllm_config, self.device)
+        if self.vllm_config.speculative_config and self.vllm_config.speculative_config.draft_engine is None:
+            self.model_runner = GPUDraftModelRunner(self.vllm_config, self.device)
+        else:
+            # Construct the model runner
+            self.model_runner: GPUModelRunner = GPUModelRunner(
+                self.vllm_config, self.device)
 
         if self.rank == 0:
             # If usage stat is enabled, collect relevant info.

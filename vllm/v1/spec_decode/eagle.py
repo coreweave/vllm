@@ -602,7 +602,8 @@ class EagleProposer:
 
         return spec_common_attn_metadata, token_indices
 
-    def load_model(self, target_model: nn.Module) -> None:
+    # Assumes EAGLE-3, so draft has its own layers, none borrowed from verifier
+    def load_model(self, target_model: nn.Module = None) -> None:
         draft_model_config = \
             self.vllm_config.speculative_config.draft_model_config
         target_attn_layer_names = set(
@@ -619,37 +620,6 @@ class EagleProposer:
 
         self.attn_layer_names = list(draft_attn_layer_names)
 
-        if supports_multimodal(target_model):
-            # handle multimodality
-            self.model.config.image_token_index = (
-                target_model.config.image_token_index)
-            target_language_model = target_model.get_language_model()
-        else:
-            target_language_model = target_model
-        # share embed_tokens with the target model if needed
-        if get_pp_group().world_size == 1 \
-            and self.model.model.embed_tokens.weight.shape \
-                == target_language_model.model.embed_tokens.weight.shape:
-            logger.info(
-                "Assuming the EAGLE head shares the same vocab embedding" \
-                " with the target model."
-            )
-            del self.model.model.embed_tokens
-            self.model.model.embed_tokens = (
-                target_language_model.model.embed_tokens)
-        else:
-            logger.info(
-                "The EAGLE head's vocab embedding will be loaded separately" \
-                " from the target model."
-            )
-
-        # share lm_head with the target model if needed
-        # some model definition do not define lm_head explicitly
-        # and reuse embed_tokens for lm_head, e.g., CohereForCausalLM
-        if self.vllm_config.speculative_config.method != "eagle3" and \
-                hasattr(target_language_model, "lm_head"):
-            logger.info("Loading EAGLE LM head weights from the target model.")
-            self.model.lm_head = target_language_model.lm_head
 
     @torch.inference_mode()
     def dummy_run(
@@ -665,7 +635,7 @@ class EagleProposer:
                 input_ids = self.input_ids[:num_tokens]
                 inputs_embeds = None
 
-            self.model(
+            return self.model(
                 input_ids=input_ids,
                 positions=self.positions[:num_tokens],
                 hidden_states=self.hidden_states[:num_tokens],

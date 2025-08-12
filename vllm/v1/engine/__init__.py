@@ -184,6 +184,7 @@ class EngineCoreRequestType(enum.Enum):
     UTILITY = b'\x03'
     # Sentinel used within EngineCoreProc.
     EXECUTOR_FAILED = b'\x04'
+    SPEC_DECODE_QUERY = b'\x05'
 
 
 class ReconfigureDistributedRequest(msgspec.Struct):

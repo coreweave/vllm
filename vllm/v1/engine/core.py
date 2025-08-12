@@ -42,7 +42,7 @@ from vllm.v1.kv_cache_interface import KVCacheConfig
 from vllm.v1.metrics.stats import SchedulerStats
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.v1.request import Request, RequestStatus
-from vllm.v1.serial_utils import MsgpackDecoder, MsgpackEncoder
+from vllm.v1.serial_utils import MsgpackDecoder, MsgpackEncoder, TensorizerDecoder
 from vllm.v1.structured_output import StructuredOutputManager
 from vllm.version import __version__ as VLLM_VERSION
 
@@ -793,6 +793,7 @@ class EngineCoreProc(EngineCore):
         # Msgpack serialization decoding.
         add_request_decoder = MsgpackDecoder(EngineCoreRequest)
         generic_decoder = MsgpackDecoder()
+        draft_model_decoder = TensorizerDecoder()
 
         with ExitStack() as stack, zmq.Context() as ctx:
             input_sockets = [
@@ -841,7 +842,9 @@ class EngineCoreProc(EngineCore):
                         bytes(type_frame.buffer))
 
                     # Deserialize the request data.
-                    if request_type == EngineCoreRequestType.ADD:
+                    if request_type == EngineCoreRequestType.SPEC_DECODE_QUERY:
+                        request = draft_model_decoder.decode(data_frames)
+                    elif request_type == EngineCoreRequestType.ADD:
                         request = add_request_decoder.decode(data_frames)
                         request = self.preprocess_add_request(request)
                     else:

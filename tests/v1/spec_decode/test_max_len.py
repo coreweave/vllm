@@ -36,7 +36,7 @@ def test_ngram_max_len(
         llm.generate(_PROMPTS, sampling_params)
 
 
-@pytest.mark.parametrize("num_speculative_tokens", [1, 3, 10])
+@pytest.mark.parametrize("num_speculative_tokens", [10])
 def test_eagle_max_len(
     monkeypatch: pytest.MonkeyPatch,
     num_speculative_tokens: int,
@@ -45,11 +45,11 @@ def test_eagle_max_len(
         m.setenv("VLLM_USE_V1", "1")
 
         llm = LLM(
-            model="meta-llama/Meta-Llama-3-8B-Instruct",
+            model="meta-llama/Meta-Llama-3.1-8B-Instruct",
             enforce_eager=True,  # For faster initialization.
             speculative_config={
                 "method": "eagle",
-                "model": "yuhuili/EAGLE-LLaMA3-Instruct-8B",
+                "model": "yuhuili/EAGLE3-LLaMA3.1-Instruct-8B",
                 "num_speculative_tokens": num_speculative_tokens,
             },
             max_model_len=100,

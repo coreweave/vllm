@@ -75,6 +75,9 @@ class EngineCoreClient(ABC):
             return EngineCoreClient.make_async_mp_client(
                 vllm_config, executor_class, log_stats)
 
+        if vllm_config.speculative_config and not vllm_config.speculative_config.draft_model_loaded:
+            return DraftModelSyncMPClient(vllm_config, executor_class, log_stats)
+
         if multiprocess_mode and not asyncio_mode:
             return SyncMPClient(vllm_config, executor_class, log_stats)
 
@@ -1305,3 +1308,24 @@ class DPLBAsyncMPClient(DPAsyncMPClient):
         logger.info(
             "[Elastic EP] Scale down completed, new data parallel size: %s",
             new_data_parallel_size)
+
+class DraftModelSyncMPClient(SyncMPClient):
+
+
+    def _send_input(self, request_type: EngineCoreRequestType, request: Any):
+        from vllm.v1.serial_utils import TensorizerEncoder, TensorizerDecoder
+        self.encoder = TensorizerEncoder()
+        self.decoder = TensorizerDecoder()
+        self.ensure_alive()
+        self.free_pending_messages()
+        # (Identity, RequestType, SerializedRequest)
+        msg = (self.core_engine, request_type.value,
+               *self.encoder.encode(request))
+
+        if len(msg) <= 3:
+            # No auxiliary buffers => no tensor backing buffers in request.
+            self.input_socket.send_multipart(msg, copy=False, flags=zmq.NOBLOCK)
+            return
+
+        tracker = self.input_socket.send_multipart(msg, copy=False, track=True)
+        self.add_pending_message(tracker, request)

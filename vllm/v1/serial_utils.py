@@ -3,6 +3,7 @@
 
 import dataclasses
 import importlib
+import io
 import pickle
 from collections.abc import Sequence
 from inspect import isclass
@@ -54,6 +55,34 @@ def _typestr(val: Any) -> Optional[tuple[str, str]]:
         return None
     t = type(val)
     return t.__module__, t.__qualname__
+
+class TensorizerEncoder:
+    def encode(self, obj: Any) -> Sequence[bytestr]:
+        from tensorizer import TensorSerializer
+        buf = io.BytesIO()
+        try:
+            serializer = TensorSerializer(buf)
+            serializer.write_state_dict({"foo": torch.Tensor([1,2,3])})
+            return [buf.getvalue()]
+        finally:
+            self.aux_buffers = None
+
+class TensorizerDecoder:
+    def decode(self, bufs: Union[bytestr, Sequence[bytestr]]) -> Any:
+        from tensorizer import TensorDeserializer
+
+        if isinstance(bufs, (bytes, bytearray, memoryview, zmq.Frame)):
+            # TODO - This check can become `isinstance(bufs, bytestr)`
+            # as of Python 3.10.
+            return self.decoder.decode(bufs)
+
+        self.aux_buffers = bufs
+        try:
+            deserializer = TensorDeserializer(io.BytesIO(bufs[0].bytes))
+            return dict(deserializer)
+        finally:
+            self.aux_buffers = ()
+
 
 
 class MsgpackEncoder:

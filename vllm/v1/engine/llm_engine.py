@@ -32,6 +32,7 @@ from vllm.v1.metrics.loggers import (PrometheusStatLogger, StatLoggerBase,
                                      StatLoggerFactory)
 from vllm.v1.metrics.reader import Metric, get_metrics_snapshot
 from vllm.v1.metrics.stats import IterationStats
+from vllm.v1.spec_decode.utils import ProposerClient
 
 logger = init_logger(__name__)
 
@@ -99,6 +100,16 @@ class LLMEngine:
         # OutputProcessor (convert EngineCoreOutputs --> RequestOutput).
         self.output_processor = OutputProcessor(self.tokenizer,
                                                 log_stats=self.log_stats)
+
+        if self.vllm_config.speculative_config and self.vllm_config.speculative_config.draft_engine is None:
+            draft_engine_core = EngineCoreClient.make_client(
+            multiprocess_mode=multiprocess_mode,
+            asyncio_mode=False,
+            vllm_config=vllm_config,
+            executor_class=executor_class,
+            log_stats=self.log_stats,
+            )
+            self.vllm_config.speculative_config.draft_engine = ProposerClient(draft_engine_core)
 
         # EngineCore (gets EngineCoreRequests and gives EngineCoreOutputs)
         self.engine_core = EngineCoreClient.make_client(

@@ -65,6 +65,7 @@ from vllm.v1.pool.metadata import PoolingMetadata
 from vllm.v1.sample.metadata import SamplingMetadata
 from vllm.v1.sample.rejection_sampler import RejectionSampler
 from vllm.v1.sample.sampler import Sampler
+from vllm.v1.spec_decode.utils import init_drafter
 from vllm.v1.spec_decode.eagle import EagleProposer
 from vllm.v1.spec_decode.medusa import MedusaProposer
 from vllm.v1.spec_decode.metadata import SpecDecodeMetadata
@@ -92,6 +93,7 @@ else:
         "xgrammar.kernels.apply_token_bitmask_inplace_torch_compile")
 
 logger = init_logger(__name__)
+
 
 
 class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
@@ -172,26 +174,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         self.encoder_cache: dict[str, dict[int, torch.Tensor]] = {}
 
         self.use_aux_hidden_state_outputs = False
-        # Set up speculative decoding.
-        # NOTE(Jiayi): currently we put the entire draft model on
-        # the last PP rank. This is not ideal if there are many
-        # layers in the draft model.
-        if self.speculative_config and get_pp_group().is_last_rank:
-            if self.speculative_config.method == "ngram":
-                self.drafter = NgramProposer(self.vllm_config)
-            elif self.speculative_config.use_eagle():
-                self.drafter = EagleProposer(self.vllm_config, self.device,
-                                             self)  # type: ignore
-                if self.speculative_config.method == "eagle3":
-                    self.use_aux_hidden_state_outputs = True
-            elif self.speculative_config.method == "medusa":
-                self.drafter = MedusaProposer(
-                    vllm_config=self.vllm_config,
-                    device=self.device)  # type: ignore
-            else:
-                raise ValueError("Unknown speculative decoding method: "
-                                 f"{self.speculative_config.method}")
-            self.rejection_sampler = RejectionSampler()
 
         # Request states.
         self.requests: dict[str, CachedRequestState] = {}
@@ -1603,6 +1585,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             # logits tensor. This means any in-place operations on bonus_logits
             # won't affect the original logits tensor.
             assert logits is not None
+            # self.await_draft_model_proposals(spec_decode_metadata)
             bonus_logits = logits[spec_decode_metadata.bonus_logits_indices]
             sampler_output = self.sampler(
                 logits=bonus_logits,
@@ -1738,6 +1721,15 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         spec_decode_metadata: Optional[SpecDecodeMetadata],
         common_attn_metadata: CommonAttentionMetadata,
     ) -> list[list[int]]:
+        # Send this to be done by the draft model engine core
+        # Also, this is probably not the correct point to send the tensors
+        self.vllm_config.speculative_config.draft_engine.send_state_dict(
+            {
+                "hidden_states": hidden_states,
+                "aux_hidden_states": aux_hidden_states,
+                "sample_hidden_states": sample_hidden_states
+            }
+        )
         num_scheduled_tokens = scheduler_output.total_num_scheduled_tokens
         if self.speculative_config.method == "ngram":
             assert isinstance(self.drafter, NgramProposer)
@@ -1764,7 +1756,7 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                 sampling_metadata=sampling_metadata,
             )
         elif self.speculative_config.use_eagle():
-            assert isinstance(self.drafter, EagleProposer)
+            proposals = self.speculative_config.draft_engine.await_proposals()
             # TODO(woosuk): Refactor the loop.
             next_token_ids: list[int] = []
             for i, token_ids in enumerate(sampled_token_ids):
@@ -1923,9 +1915,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                                                   self.scheduler_config,
                                                   self.lora_config,
                                                   self.device)
-            if hasattr(self, "drafter"):
-                logger.info("Loading drafter model...")
-                self.drafter.load_model(self.model)
             if self.use_aux_hidden_state_outputs:
                 self.model.set_aux_hidden_state_layers(
                     self.model.get_eagle3_aux_hidden_state_layers())
@@ -2257,10 +2246,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             else:
                 hidden_states = outputs
 
-            if self.speculative_config and self.speculative_config.use_eagle():
-                assert isinstance(self.drafter, EagleProposer)
-                self.drafter.dummy_run(num_tokens)
-
         # This is necessary to avoid blocking DP.
         # For dummy runs, we typically skip EPLB since we don't have any real
         # requests to process.
@@ -2320,33 +2305,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
                     "initializing the engine.") from e
             else:
                 raise e
-        if self.speculative_config:
-            draft_token_ids = [[0] for _ in range(num_reqs)]
-            dummy_spec_decode_metadata = SpecDecodeMetadata.make_dummy(
-                draft_token_ids, self.device)
-
-            num_tokens = sum(len(ids) for ids in draft_token_ids)
-            # draft_probs = torch.randn(
-            #     num_tokens, logits.shape[-1], device=self.device,
-            #     dtype=logits.dtype)
-            draft_probs = None
-            target_logits = torch.randn(num_tokens,
-                                        logits.shape[-1],
-                                        device=self.device,
-                                        dtype=logits.dtype)
-            # NOTE(woosuk): Here, we should use int32 because the sampler uses
-            # int32 for bonus_token_ids. If the dtype mismatches, re-compilation
-            # will occur at runtime.
-            bonus_token_ids = torch.zeros(num_reqs,
-                                          device=self.device,
-                                          dtype=torch.int32)
-            self.rejection_sampler(
-                dummy_spec_decode_metadata,
-                draft_probs,
-                target_logits,
-                bonus_token_ids,
-                dummy_metadata,
-            )
         return sampler_output
 
     def _dummy_pooler_run_task(
@@ -2918,12 +2876,6 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
         self.initialize_attn_backend(kv_cache_config)
         kv_caches = self.initialize_kv_cache_tensors(kv_cache_config)
 
-        if self.speculative_config and self.speculative_config.use_eagle():
-            assert isinstance(self.drafter, EagleProposer)
-            # validate all draft model layers belong to the same kv cache
-            # group
-            self.drafter.validate_same_kv_cache_group(kv_cache_config)
-
         if has_kv_transfer_group():
             get_kv_transfer_group().register_kv_caches(kv_caches)
 
@@ -3065,3 +3017,207 @@ class GPUModelRunner(LoRAModelRunnerMixin, KVConnectorModelRunnerMixin):
             common_prefix_len=0,  # No cascade for encoder
             common_attn_metadata=common_metadata,
         )
+
+class GPUDraftModelRunner(GPUModelRunner):
+    def __init__(self, vllm_config: VllmConfig, device: torch.device):
+
+        super().__init__(vllm_config, device)
+
+        # Set up speculative decoding.
+        # NOTE(Jiayi): currently we put the entire draft model on
+        # the last PP rank. This is not ideal if there are many
+        # layers in the draft model.
+        if self.speculative_config and get_pp_group().is_last_rank:
+            if self.speculative_config.method == "ngram":
+                self.drafter = init_drafter(self.vllm_config.speculative_config, NgramProposer, self.vllm_config)
+            elif self.speculative_config.use_eagle():
+                self.drafter = init_drafter(EagleProposer, self.vllm_config, self.device,
+                                             self)  # type: ignore
+                if self.speculative_config.method == "eagle3":
+                    self.use_aux_hidden_state_outputs = True
+            elif self.speculative_config.method == "medusa":
+                self.drafter = init_drafter(MedusaProposer,
+                    self.vllm_config,
+                    self.device)  # type: ignore
+            else:
+                raise ValueError("Unknown speculative decoding method: "
+                                 f"{self.speculative_config.method}")
+            self.rejection_sampler = RejectionSampler()
+
+    def load_model(self, eep_scale_up: bool = False) -> None:
+        """
+        Args:
+            eep_scale_up: the model loading is for elastic EP scale up.
+        """
+        logger.info("Starting to load model %s...", self.model_config.model)
+        if eep_scale_up:
+            from vllm.distributed.parallel_state import get_ep_group
+            num_local_physical_experts = torch.empty(1,
+                                                     dtype=torch.int32,
+                                                     device="cpu")
+            torch.distributed.broadcast(num_local_physical_experts,
+                                        group=get_ep_group().cpu_group,
+                                        group_src=0)
+            num_local_physical_experts = int(num_local_physical_experts.item())
+            new_ep_size = get_ep_group().world_size
+            global_expert_load, old_global_expert_indices = (
+                EplbState.recv_state())
+            num_logical_experts = global_expert_load.shape[1]
+            self.parallel_config.num_redundant_experts = (
+                num_local_physical_experts * new_ep_size - num_logical_experts)
+            assert old_global_expert_indices.shape[
+                1] % num_local_physical_experts == 0
+            old_ep_size = old_global_expert_indices.shape[
+                1] // num_local_physical_experts
+            rank_mapping = {
+                old_ep_rank: old_ep_rank
+                for old_ep_rank in range(old_ep_size)
+            }
+        else:
+            global_expert_load = None
+            old_global_expert_indices = None
+            rank_mapping = None
+
+        with DeviceMemoryProfiler() as m:
+            time_before_load = time.perf_counter()
+            self.drafter.load_model()
+            self.model = self.drafter.model
+            time_after_load = time.perf_counter()
+        self.model_memory_usage = m.consumed_memory
+        logger.info("Model loading took %.4f GiB and %.6f seconds",
+                    self.model_memory_usage / GiB_bytes,
+                    time_after_load - time_before_load)
+        prepare_communication_buffer_for_model(self.model)
+
+        if is_mixture_of_experts(
+                self.model) and self.parallel_config.enable_eplb:
+            logger.info("EPLB is enabled for model %s.",
+                        self.model_config.model)
+            self.eplb_state = EplbState.build(
+                self.model,
+                self.device,
+                self.parallel_config,
+                global_expert_load,
+                old_global_expert_indices,
+                rank_mapping,
+            )
+
+        if (
+            self.vllm_config.compilation_config.level == \
+                CompilationLevel.DYNAMO_AS_IS and supports_dynamo()
+        ):
+            backend = self.vllm_config.compilation_config.init_backend(
+                self.vllm_config)
+            compilation_counter.dynamo_as_is_cunt += 1
+            self.model.compile(
+                fullgraph=envs.VLLM_TEST_DYNAMO_FULLGRAPH_CAPTURE,
+                backend=backend)
+
+    def profile_run(self) -> None:
+        self.drafter.dummy_run(self.max_num_tokens)
+
+    @torch.inference_mode()
+    def _dummy_run(
+        self,
+        num_tokens: int,
+        capture_attn_cudagraph: bool = False,
+        skip_eplb: bool = False,
+        is_profile: bool = False,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        return self.drafter.dummy_run(num_tokens)
+
+    @torch.inference_mode()
+    def _dummy_sampler_run(
+        self,
+        hidden_states: torch.Tensor,
+    ) -> torch.Tensor:
+        # The dummy hidden states may contain special values,
+        # like `inf` or `nan`.
+        # To avoid breaking the sampler, we use a random tensor here instead.
+        hidden_states = torch.rand_like(hidden_states)
+
+        logits = self.model.compute_logits(hidden_states, None)
+        num_reqs = logits.size(0)
+
+        dummy_tensors = lambda v: torch.full(
+            (num_reqs, ), v, device=self.device)
+
+        dummy_metadata = SamplingMetadata(
+            temperature=dummy_tensors(0.5),
+            all_greedy=False,
+            all_random=False,
+            top_p=dummy_tensors(0.9),
+            top_k=dummy_tensors(logits.size(1) - 1),
+            generators={},
+            max_num_logprobs=None,
+            no_penalties=True,
+            prompt_token_ids=None,
+            frequency_penalties=dummy_tensors(0.1),
+            presence_penalties=dummy_tensors(0.1),
+            repetition_penalties=dummy_tensors(0.1),
+            output_token_ids=[[] for _ in range(num_reqs)],
+            allowed_token_ids_mask=None,
+            bad_words_token_ids={},
+            logitsprocs=LogitsProcessorManager(),
+        )
+        try:
+            sampler_output = self.sampler(logits=logits,
+                                          sampling_metadata=dummy_metadata)
+        except RuntimeError as e:
+            if 'out of memory' in str(e):
+                raise RuntimeError(
+                    "CUDA out of memory occurred when warming up sampler with "
+                    f"{num_reqs} dummy requests. Please try lowering "
+                    "`max_num_seqs` or `gpu_memory_utilization` when "
+                    "initializing the engine.") from e
+            else:
+                raise e
+
+        draft_token_ids = [[0] for _ in range(num_reqs)]
+        dummy_spec_decode_metadata = SpecDecodeMetadata.make_dummy(
+            draft_token_ids, self.device)
+
+        num_tokens = sum(len(ids) for ids in draft_token_ids)
+        # draft_probs = torch.randn(
+        #     num_tokens, logits.shape[-1], device=self.device,
+        #     dtype=logits.dtype)
+        draft_probs = None
+        target_logits = torch.randn(num_tokens,
+                                    logits.shape[-1],
+                                    device=self.device,
+                                    dtype=logits.dtype)
+        # NOTE(woosuk): Here, we should use int32 because the sampler uses
+        # int32 for bonus_token_ids. If the dtype mismatches, re-compilation
+        # will occur at runtime.
+        bonus_token_ids = torch.zeros(num_reqs,
+                                      device=self.device,
+                                      dtype=torch.int32)
+        self.rejection_sampler(
+            dummy_spec_decode_metadata,
+            draft_probs,
+            target_logits,
+            bonus_token_ids,
+            dummy_metadata,
+        )
+        return sampler_output
+
+    def initialize_kv_cache(self, kv_cache_config: KVCacheConfig) -> None:
+        """
+        Initialize KV cache based on `kv_cache_config`.
+        Args:
+            kv_cache_config: Configuration for the KV cache, including the KV
+            cache size of each layer
+        """
+        self.kv_cache_config = kv_cache_config
+        self.may_reinitialize_input_batch(kv_cache_config)
+        self.initialize_attn_backend(kv_cache_config)
+        kv_caches = self.initialize_kv_cache_tensors(kv_cache_config)
+
+        if self.speculative_config.use_eagle():
+            assert isinstance(self.drafter, EagleProposer)
+            # validate all draft model layers belong to the same kv cache
+            # group
+            self.drafter.validate_same_kv_cache_group(kv_cache_config)
+
+        if has_kv_transfer_group():
+            get_kv_transfer_group().register_kv_caches(kv_caches)

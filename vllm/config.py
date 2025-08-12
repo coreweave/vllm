@@ -2859,6 +2859,7 @@ class SpeculativeConfig:
     draft_parallel_config: SkipValidation[
         ParallelConfig] = None  # type: ignore
     """The parallel configuration for the draft model initialized internal."""
+    draft_engine: Any = None
 
     def compute_hash(self) -> str:
         """
@@ -3146,6 +3147,10 @@ class SpeculativeConfig:
             draft_max_model_len,
             target_max_model_len,
         )
+
+    @property
+    def draft_model_loaded(self) -> bool:
+        return self.draft_engine is not None
 
     @staticmethod
     def _verify_and_get_draft_tp(
